@@ -205,6 +205,13 @@ dialog::backdrop{background:rgba(15,12,18,.55)}
 .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;min-width:60px}
 .bar i{display:block;height:100%;background:var(--brand);border-radius:3px}
 
+/* 表單分段標題 */
+.sec{font-size:11.5px;font-weight:700;color:var(--ink3);letter-spacing:.06em;
+  margin:18px 0 9px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.ck{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);
+  font-weight:400;padding:9px 0;cursor:pointer;margin:0}
+.ck input{width:auto;accent-color:var(--btn);margin:0}
+
 /* 貼上解析 + 照片 */
 .import-box{background:var(--bg);border:1px dashed var(--line);border-radius:9px;
   padding:12px;margin-bottom:16px}
@@ -389,7 +396,12 @@ kbd{background:var(--card);border:1px solid var(--line);border-bottom-width:2px;
         <div class="field"><label for="p-shop">店名</label><input id="p-shop" placeholder="你的店名"></div>
         <div class="field"><label for="p-phone">電話</label><input id="p-phone" placeholder="09xx-xxx-xxx"></div>
         <div class="field"><label for="p-line">LINE ID</label><input id="p-line"></div>
-        <div class="field"><label for="p-sign">結尾簽名檔</label><textarea id="p-sign" style="min-height:70px"></textarea></div>
+        <div class="sec">執業資訊</div>
+        <div class="field"><label for="p-license">營業員證照號碼</label><input id="p-license" placeholder="(95)登字第070688號"></div>
+        <div class="field"><label for="p-broker">不動產經紀人</label><input id="p-broker" placeholder="姓名 + 證號"></div>
+        <div class="field"><label for="p-company">公司全名</label><input id="p-company" placeholder="中信房屋新莊幸福店加盟店／○○不動產仲介經紀股份有限公司"></div>
+        <div class="field"><label for="p-sign">結尾簽名檔</label>
+          <textarea id="p-sign" style="min-height:110px" placeholder="固定的聯絡方式區塊，用 {{簽名檔}} 一次帶進任何模板"></textarea></div>
         <button class="btn" id="p-save">儲存</button>
       </div>
       <div>
@@ -459,15 +471,24 @@ kbd{background:var(--card);border:1px solid var(--line);border-bottom-width:2px;
 const KEY='fb-poster-v1';
 const blank={
   groups:[],templates:[],listings:[],logs:[],schedule:[],
-  profile:{name:'',title:'',shop:'',phone:'',line:'',sign:''},
+  profile:{name:'',title:'',shop:'',phone:'',line:'',
+           license:'',broker:'',company:'',sign:''},
   settings:{keepDays:0}
+};
+/** 物件的完整欄位表（也是新增物件時的預設值） */
+const LISTING_FIELDS={
+  title:'',kind:'售',status:'在售',address:'',usage:'',
+  price:'',negotiable:false,
+  size:'',sizeHouse:'',sizeParking:'',sizeMain:'',sizeBalcony:'',sizePublic:'',land:'',
+  layout:'',floor:'',totalFloor:'',age:'',facing:'',units:'',fee:'',parking:'',
+  transport:'',features:'',motive:'',note:'',photos:[],
 };
 /** v1 存檔沒有 schedule / 保留期 / 成效欄位，補齊而不是丟掉 */
 function migrate(d){
   const x=Object.assign(structuredClone(blank),d||{});
   x.groups   =(x.groups||[]).map(g=>({ruleDelDays:0,...g}));
   x.templates=(x.templates||[]);
-  x.listings =(x.listings||[]).map(l=>({status:'在售',photos:[],...l}));
+  x.listings =(x.listings||[]).map(l=>({...structuredClone(LISTING_FIELDS),...l}));
   x.logs     =(x.logs||[]).map(l=>({tplId:'',listingId:'',expireAt:null,
                                     deletedAt:null,snoozeUntil:null,flag:'',leads:0,...l}));
   x.schedule =(x.schedule||[]);
@@ -621,17 +642,31 @@ function go(v){
 /* =========================================================
    變數代入
    ========================================================= */
-const LISTING_VARS=[['物件名稱','title'],['類型','kind'],['地址','address'],
-  ['格局','layout'],['坪數','size'],['總價','price'],['樓層','floor'],
-  ['屋齡','age'],['特色','features'],['備註','note']];
+const LISTING_VARS=[
+  ['案名','title'],['物件名稱','title'],['類型','kind'],['地點','address'],['地址','address'],
+  ['用途','usage'],['總價','price'],['坪數','size'],['房坪','sizeHouse'],['車坪','sizeParking'],
+  ['主建物','sizeMain'],['陽台','sizeBalcony'],['公設','sizePublic'],['土地','land'],
+  ['格局','layout'],['樓層','floor'],['樓高','totalFloor'],['屋齡','age'],['座向','facing'],
+  ['戶數電梯','units'],['管理費','fee'],['車位','parking'],
+  ['交通機能','transport'],['特色','features'],['售屋動機','motive'],['備註','note'],
+];
 const PROFILE_VARS=[['姓名','name'],['職稱','title'],['店名','shop'],
-  ['電話','phone'],['LINE','line'],['簽名檔','sign']];
+  ['電話','phone'],['LINE','line'],['證照號碼','license'],['經紀人','broker'],
+  ['公司全名','company'],['簽名檔','sign']];
 
 function buildVars(listing){
   const v={};
-  LISTING_VARS.forEach(([label,k])=>v[label]=listing?(listing[k]||''):'');
+  LISTING_VARS.forEach(([label,k])=>{
+    const raw=listing?listing[k]:'';
+    v[label]=typeof raw==='boolean'?'':(raw||'');
+  });
   PROFILE_VARS.forEach(([label,k])=>v[label]=db.profile[k]||'');
+  // 「誠可議」是勾選欄位，轉成可以直接寫進文案的字
+  v['可議']=listing&&listing.negotiable?'（誠可議）':'';
   v['今天']=fmtDate(Date.now());
+  // 簽名檔本身也常寫成含變數的樣板，先把它展開一層，
+  // 否則 {{簽名檔}} 代入後裡面的 {{公司全名}} 會原封不動印出來
+  v['簽名檔']=subst(db.profile.sign||'',{...v,'簽名檔':''});
   return v;
 }
 const VAR_RE=/\{\{\s*([^}]+?)\s*\}\}/g;
@@ -664,47 +699,34 @@ function fill(body,listing){
 const CITIES='台北市|臺北市|新北市|桃園市|台中市|臺中市|台南市|臺南市|高雄市|基隆市|新竹市|新竹縣|苗栗縣|彰化縣|南投縣|雲林縣|嘉義市|嘉義縣|屏東縣|宜蘭縣|花蓮縣|台東縣|臺東縣|澎湖縣|金門縣|連江縣';
 const num=s=>String(s||'').replace(/,/g,'');
 
+/** 抓「【欄位】：值」「欄位:值」這種標籤式寫法 —— 這是房仲貼文最常見的格式，
+ *  比通篇亂找精準得多，所以標籤命中時優先採用。 */
+function tagged(t,names){
+  for(const n of names){
+    const re=new RegExp(`[【\\[]?\\s*${n}\\s*[】\\]]?\\s*[:：]\\s*([^\\n]+)`);
+    const m=t.match(re);
+    if(m){
+      const v=m[1].trim();
+      if(v&&!/^[-—–:：]*$/.test(v))return v;
+    }
+  }
+  return '';
+}
+const stripParen=s=>String(s||'').replace(/[（(][^）)]*[）)]/g,'').trim();
+
 const RULES=[
   {k:'kind',label:'類型',fn:t=>/租金|月租|出租/.test(t)&&!/售價|總價/.test(t)?'租':'售'},
-  {k:'price',label:'總價 / 租金',fn:t=>{
-    let m=t.match(/(?:總價|售價|開價|價格)\s*[:：]?\s*([\d,]+(?:\.\d+)?)\s*萬/);
-    if(m)return m[1]+' 萬';
-    m=t.match(/(?:租金|月租)\s*[:：]?\s*([\d,]+)\s*元?/);
-    if(m)return num(m[1])+' 元/月';
-    m=t.match(/([\d,]+(?:\.\d+)?)\s*萬(?!坪)/);          // 落單的「1,280萬」
-    return m?m[1]+' 萬':'';
+  {k:'title',label:'案名',fn:t=>{
+    const v=tagged(t,['案名','物件名稱','社區名稱','建案']);
+    if(v)return v;
+    // 沒標籤就找第一個像標題的行：夠短、不是編號、不是純數字、不含價格單位
+    return t.split('\n').map(s=>s.trim().replace(/^[@#＠]\S*\s*/,''))
+      .find(s=>s.length>=4&&s.length<=30&&!/^\d/.test(s)
+        &&!/元|坪$|^https?:|編號|物件代號|[【\[]/.test(s))||'';
   }},
-  {k:'layout',label:'格局',fn:t=>{
-    // 屋主口述常寫「三房兩廳」，不是只有阿拉伯數字
-    const CN={一:1,二:2,兩:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10};
-    const D='[一二三四五六七八九十兩\\d]+';
-    const n=s=>/^\d+$/.test(s)?s:(CN[s]!==undefined?String(CN[s]):s);
-    let m=t.match(new RegExp(`(${D})\\s*房\\s*(${D})\\s*廳\\s*(${D})\\s*衛`));
-    if(m)return `${n(m[1])}房${n(m[2])}廳${n(m[3])}衛`;
-    m=t.match(new RegExp(`(${D})\\s*房\\s*(${D})\\s*廳`));
-    if(m)return `${n(m[1])}房${n(m[2])}廳`;
-    m=t.match(new RegExp(`(${D})\\s*房(?!\\s*客)`));
-    return m?n(m[1])+'房':'';
-  }},
-  {k:'size',label:'坪數',fn:t=>{
-    // 建坪優先；沒標示就取第一個坪數，但跳過土地/公設等衍生數字
-    let m=t.match(/(?:建物|建坪|權狀|主建物)\s*[^\d]{0,6}([\d.]+)\s*坪/);
-    if(m)return m[1]+' 坪';
-    m=t.match(/([\d.]+)\s*坪/);
-    return m?m[1]+' 坪':'';
-  }},
-  {k:'floor',label:'樓層',fn:t=>{
-    let m=t.match(/(\d+)\s*[\/／]\s*(\d+)\s*(?:樓|F)/i);
-    if(m)return `${m[1]}/${m[2]}F`;
-    m=t.match(/樓層\s*[:：]?\s*([\d\-~]+)\s*(?:樓|F)/i);
-    return m?m[1]+'F':'';
-  }},
-  {k:'age',label:'屋齡',fn:t=>{
-    const m=t.match(/屋齡\s*[:：]?\s*([\d.]+)\s*年/);
-    return m?m[1]+' 年':'';
-  }},
-  {k:'address',label:'地址 / 位置',fn:t=>{
-    // 縣市、區、路名各自成段，否則「台中市」會把「西屯區」吃掉
+  {k:'address',label:'地點',fn:t=>{
+    let v=tagged(t,['地點','地址','位置','座落']);
+    if(v)return v.replace(/\s*\d+\s*樓.*$/,'').trim();   // 「…五街11樓」的樓層另有欄位
     const road='[\\u4e00-\\u9fa5A-Za-z\\d]{1,14}(?:路|街|大道)(?:[一二三四五六七八九十\\d]+段)?';
     const re=new RegExp(`(?:(${CITIES})\\s*)?([\\u4e00-\\u9fa5]{1,3}[區鄉鎮])\\s*(${road})?`);
     const m=t.match(re);
@@ -712,26 +734,127 @@ const RULES=[
     const only=t.match(new RegExp(`(${CITIES})\\s*(${road})?`));
     return only?[only[1],only[2]].filter(Boolean).join('').replace(/\s+/g,''):'';
   }},
-  {k:'title',label:'物件名稱',fn:t=>{
-    // 第一個像標題的行：夠短、不是編號、不是純數字、不含價格單位
+  {k:'usage',label:'用途',fn:t=>tagged(t,['用途','使用分區','型態','類型'])},
+  {k:'price',label:'總價',fn:t=>{
+    let v=tagged(t,['總價','售價','開價','價格']);
+    if(v){
+      const m=stripParen(v).match(/([\d,]+(?:\.\d+)?)\s*萬/);
+      if(m)return m[1]+' 萬';
+      if(stripParen(v))return stripParen(v);
+    }
+    v=tagged(t,['租金','月租']);
+    if(v){const m=v.match(/([\d,]+)/);if(m)return num(m[1])+' 元/月';}
+    let m=t.match(/(?:租金|月租)\s*[:：]?\s*([\d,]+)\s*元?/);
+    if(m)return num(m[1])+' 元/月';
+    m=t.match(/([\d,]+(?:\.\d+)?)\s*萬(?!坪)/);
+    return m?m[1]+' 萬':'';
+  }},
+  {k:'negotiable',label:'可議價',fn:t=>/誠可議|可議|議價空間|價格可談/.test(t)?'是':''},
+  {k:'size',label:'坪數',fn:t=>{
+    let v=tagged(t,['坪數','建坪','權狀坪數','建物坪數','總坪數']);
+    if(v){const m=stripParen(v).match(/([\d.]+)\s*坪/)||v.match(/([\d.]+)\s*坪/);
+      if(m)return m[1]+' 坪';}
+    let m=t.match(/(?:建物|建坪|權狀|總坪)\s*[^\d]{0,6}([\d.]+)\s*坪/);
+    if(m)return m[1]+' 坪';
+    m=t.match(/([\d.]+)\s*坪/);
+    return m?m[1]+' 坪':'';
+  }},
+  // 坪數細項通常擠在括號裡：((房坪30.81坪 車坪9.32坪)(主 19.15坪.陽台1.33坪.公設10.33坪)
+  {k:'sizeHouse',label:'房坪',fn:t=>{const m=t.match(/房坪\s*([\d.]+)/);return m?m[1]+' 坪':'';}},
+  {k:'sizeParking',label:'車坪',fn:t=>{const m=t.match(/車坪\s*([\d.]+)/);return m?m[1]+' 坪':'';}},
+  {k:'sizeMain',label:'主建物',fn:t=>{const m=t.match(/主(?:建物)?\s*[:：]?\s*([\d.]+)\s*坪/);return m?m[1]+' 坪':'';}},
+  {k:'sizeBalcony',label:'陽台',fn:t=>{const m=t.match(/陽台\s*[:：]?\s*([\d.]+)\s*坪/);return m?m[1]+' 坪':'';}},
+  {k:'sizePublic',label:'公設',fn:t=>{const m=t.match(/公設\s*[:：]?\s*([\d.]+)\s*坪/);return m?m[1]+' 坪':'';}},
+  {k:'land',label:'土地',fn:t=>{
+    const v=tagged(t,['土地','地坪','土地坪數']);
+    const m=(v||'').match(/([\d.]+)/)||t.match(/(?:土地|地坪)\s*[:：]?\s*([\d.]+)\s*坪/);
+    return m?m[1]+' 坪':'';
+  }},
+  {k:'layout',label:'格局',fn:t=>{
+    const CN={一:1,二:2,兩:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10};
+    // 房仲常寫 1+1房、1.5衛，數字不只是整數
+    const D='[一二三四五六七八九十兩\\d]+(?:[+＋.][\\d]+)?';
+    const n=s=>/^[\d.+＋]+$/.test(s)?s.replace('＋','+'):(CN[s]!==undefined?String(CN[s]):s);
+    const src=tagged(t,['格局'])||t;
+    let m=src.match(new RegExp(`(${D})\\s*房\\s*(${D})\\s*廳\\s*(${D})\\s*衛`));
+    if(m)return `${n(m[1])}房${n(m[2])}廳${n(m[3])}衛`;
+    m=src.match(new RegExp(`(${D})\\s*房\\s*(${D})\\s*廳`));
+    if(m)return `${n(m[1])}房${n(m[2])}廳`;
+    m=src.match(new RegExp(`(${D})\\s*房(?!\\s*客)`));
+    return m?n(m[1])+'房':'';
+  }},
+  {k:'floor',label:'樓層',fn:t=>{
+    const v=tagged(t,['樓層','所在樓層']);
+    if(v){const m=v.match(/([\d\-~]+)\s*(?:樓|F)/i);if(m)return m[1]+'F';}
+    let m=t.match(/(\d+)\s*[\/／]\s*(\d+)\s*(?:樓|F)/i);
+    if(m)return `${m[1]}/${m[2]}F`;
+    return '';
+  }},
+  {k:'totalFloor',label:'樓高',fn:t=>{
+    const v=tagged(t,['樓高','總樓層','總樓高']);
+    if(v){const m=v.match(/(\d+)/);if(m)return m[1]+'F';}
+    const m=t.match(/(\d+)\s*[\/／]\s*(\d+)\s*(?:樓|F)/i);
+    return m?m[2]+'F':'';
+  }},
+  {k:'age',label:'屋齡',fn:t=>{
+    const v=tagged(t,['屋齡']);
+    const m=(v||'').match(/([\d.]+)/)||t.match(/屋齡\s*[:：]?\s*([\d.]+)\s*年/);
+    return m?m[1]+' 年':'';
+  }},
+  {k:'facing',label:'座向',fn:t=>{
+    const v=tagged(t,['座向','朝向','座落方位']);
+    if(v)return v;
+    const m=t.match(/(座[東西南北]朝[東西南北])/);
+    return m?m[1]:'';
+  }},
+  {k:'units',label:'戶數 / 電梯',fn:t=>{
+    const v=tagged(t,['戶數','格局配置','一層戶數']);
+    if(v)return v;
     const line=t.split('\n').map(s=>s.trim())
-      .find(s=>s.length>=4&&s.length<=30&&!/^\d/.test(s)
-        &&!/元|坪$|^https?:|編號|物件代號/.test(s));
-    return line||'';
+      .find(s=>/一層/.test(s)&&/戶/.test(s));
+    return line?line.replace(/^一層幾戶[,，]?\s*/,''):'';
+  }},
+  {k:'fee',label:'管理費',fn:t=>tagged(t,['管理費','管理費用'])},
+  {k:'parking',label:'車位',fn:t=>{
+    const v=tagged(t,['車位編號','車位','停車位']);
+    if(v)return v;
+    const m=t.match(/(坡道平面|坡平|機械車位|平面車位|升降平面)/);
+    return m?m[1]:'';
+  }},
+  {k:'motive',label:'售屋動機',fn:t=>{
+    const line=t.split('\n').map(s=>s.trim())
+      .find(s=>/一定要賣|誠意釋出|誠售|急售|換屋|移民|資金需求|屋主誠意/.test(s)&&s.length<=40);
+    return line?line.replace(/^[@#＠]\S*\s*/,''):'';
   }},
 ];
 /** 抓賣點：條列句或含賣點關鍵字的短句。
  *  排除已被其他規則吃掉的資料行，否則會把地址、樓層當成賣點。 */
-const FEATURE_WORDS=/(採光|捷運|學區|公園|車位|裝潢|棟距|收納|電梯|中庭|安靜|邊間|樓中樓|庭院|露台|翻新|屋況|生活機能|市場|全新|方正|無暗房|近\S|機能|管理|警衛|保全|景觀|通風|挑高)/;
-const DATA_LINE=/(總價|售價|開價|價格|租金|月租|坪|樓|F\b|屋齡|房\s*\d*\s*廳|編號|物件代號|地址|格局|^\s*https?:)/;
+const FEATURE_WORDS=/(採光|裝潢|棟距|收納|中庭|安靜|邊間|樓中樓|庭院|露台|翻新|屋況|全新|方正|無暗房|管理|警衛|保全|景觀|通風|挑高|空間使用|格局佳|稀有|僅此)/;
+/** 交通與生活機能：走路幾分鐘、鄰近什麼，這些跟屋況賣點性質不同，分開存 */
+const TRANSPORT_WORDS=/(走路|步行|分鐘|公尺|捷運|車站|鄰近|快速道路|國道|交流道|學區|國小|國中|高中|市場|夜市|公園|全聯|超市|賣場|郵局|運動中心|生活機能|商圈)/;
+const DATA_LINE=/([【\[]|總價|售價|開價|價格|租金|月租|坪$|坪數|屋齡|樓高|座向|管理費|車位編號|編號|物件代號|地點|地址|格局\s*[:：]|土地|用途|^\s*https?:|^[=＝─━—\-_]{3,}|證照|經紀人|專線|粉絲專頁|個人網站)/;
+const SIG_LINE=/(0\d{1,3}[-\s]?\d{3,4}[-\s]?\d{3,4}|登字第|彰縣字|加盟店|股份有限公司|Facebook|LINE|📱|👉|┋)/;
+/** 自我推銷／品牌宣傳，不是物件本身的資訊 */
+const PROMO_LINE=/(顧問|經營各大|平台|核心價值|盡我所能|我來幫您|歡迎來電|歡迎私訊|獨家推薦|粉絲專頁|個人網站|社團)/;
+
+function splitBody(t){
+  return t.split('\n')
+    .map(s=>s.trim()
+      .replace(/^[@#＠]\S*\s*/,'')                                  // @志會買好房 這種前綴
+      .replace(/^[•·▪◆▪️✔✅★☆➤▶\-*＊\s]+/,'')
+      .replace(/[。\s]+$/,'').trim())
+    .filter(s=>s.length>=4&&s.length<=48
+      &&!DATA_LINE.test(s)&&!SIG_LINE.test(s)&&!PROMO_LINE.test(s)
+      &&!/^[\d,.\s]+$/.test(s)
+      &&(s.match(/\//g)||[]).length<2);   // 「A/B/C」是標題摘要行，不是條列內容
+}
 function parseFeatures(t){
-  const picks=t.split('\n')
-    .map(s=>s.trim().replace(/^[•·▪◆▪️✔✅★\-*\s]+/,'').trim())
-    .filter(s=>s.length>=5&&s.length<=40
-      &&!DATA_LINE.test(s)              // 不是資料行
-      &&!/^[\d,.\s]+$/.test(s)          // 不是純數字
-      &&FEATURE_WORDS.test(s));         // 真的講到賣點
-  return [...new Set(picks)].slice(0,4).join('\n');
+  const picks=splitBody(t).filter(s=>FEATURE_WORDS.test(s)&&!TRANSPORT_WORDS.test(s));
+  return [...new Set(picks)].slice(0,6).join('\n');
+}
+function parseTransport(t){
+  const picks=splitBody(t).filter(s=>TRANSPORT_WORDS.test(s));
+  return [...new Set(picks)].slice(0,10).join('\n');
 }
 function parseListing(text){
   const t=String(text||'').replace(/\r/g,'');
@@ -741,9 +864,12 @@ function parseListing(text){
     try{v=fn(t)||'';}catch(e){v='';}
     if(v){out[k]=v;found.push({label,value:v});}
   });
-  // 標題常常也含賣點關鍵字，別讓它在賣點裡再出現一次
-  const f=parseFeatures(t).split('\n').filter(s=>s!==out.title).join('\n');
-  if(f){out.features=f;found.push({label:'賣點特色',value:f.replace(/\n/g,'、')});}
+  // 標題、售屋動機常含賣點關鍵字，別讓它們在賣點裡再出現一次
+  const drop=new Set([out.title,out.motive].filter(Boolean));
+  const f=parseFeatures(t).split('\n').filter(s=>s&&!drop.has(s)).join('\n');
+  if(f){out.features=f;found.push({label:'特色',value:f.replace(/\n/g,'、')});}
+  const tr=parseTransport(t).split('\n').filter(s=>s&&!drop.has(s)).join('\n');
+  if(tr){out.transport=tr;found.push({label:'交通機能',value:tr.replace(/\n/g,'、')});}
   return{fields:out,found};
 }
 
@@ -875,8 +1001,12 @@ const CTAS=[
 function editTpl(t){
   const isNew=!t;
   t=t||{id:uid(),name:'',cat:'物件銷售',body:''};
-  const varChips=[...LISTING_VARS.map(v=>v[0]),...PROFILE_VARS.map(v=>v[0]),'今天']
-    .map(v=>`<code data-ins="{{${v}}}">{{${v}}}</code>`).join('');
+  // LISTING_VARS 有同義詞（案名／物件名稱指同一欄），只列一個免得看起來重複
+  const seen=new Set();
+  const varChips=[
+    ...LISTING_VARS.filter(([,k])=>!seen.has(k)&&seen.add(k)).map(v=>v[0]),
+    '可議',...PROFILE_VARS.map(v=>v[0]),'今天',
+  ].map(v=>`<code data-ins="{{${v}}}">{{${v}}}</code>`).join('');
   const ctaChips=CTAS.map((c,i)=>
     `<code data-ins="${esc(c)}" title="${esc(c)}">CTA ${i+1}：${esc(c.slice(0,14))}…</code>`).join('');
   openDlg(isNew?'新增模板':'編輯模板',
@@ -923,8 +1053,7 @@ function renderTpls(){
 const STATUSES=['在售','已成交','已下架'];
 function editListing(l){
   const isNew=!l;
-  l=l||{id:uid(),title:'',kind:'售',status:'在售',address:'',layout:'',size:'',
-        price:'',floor:'',age:'',features:'',note:'',photos:[]};
+  l=l||{id:uid(),...structuredClone(LISTING_FIELDS)};
   l.photos=l.photos||[];
   const wasStatus=l.status;
   openDlg(isNew?'新增物件':'編輯物件',
@@ -940,21 +1069,51 @@ function editListing(l){
          抓得到：格局、坪數、總價、樓層、屋齡、地址、賣點。填錯的欄位下面可以直接改。
        </div>
      </div>`+
-    F('物件名稱 *','f-title',l.title,'text','例：幸福路 三房電梯')+
+    F('案名 *','f-title',l.title,'text','例：高樓層日系昭和風 LDK 房車')+
     `<div class="grid g3">
       <div>${SEL('類型','f-kind',['售','租'],l.kind)}</div>
       <div>${SEL('狀態','f-status',STATUSES,l.status)}</div>
-      <div>${F('總價 / 租金','f-price',l.price,'text','1,280 萬')}</div>
+      <div>${F('用途','f-usage',l.usage,'text','住家用')}</div>
     </div>`+
-    F('地址 / 位置','f-address',l.address,'text','新北市新莊區幸福路')+
+    F('地點','f-address',l.address,'text','新北市泰山區信華五街')+
     `<div class="grid g3">
-      <div>${F('格局','f-layout',l.layout,'text','3房2廳2衛')}</div>
-      <div>${F('坪數','f-size',l.size,'text','32.5 坪')}</div>
-      <div>${F('樓層','f-floor',l.floor,'text','7/12F')}</div>
+      <div>${F('總價 / 租金','f-price',l.price,'text','2,298 萬')}</div>
+      <div class="field"><label for="f-neg">價格備註</label>
+        <label class="ck"><input type="checkbox" id="f-neg"${l.negotiable?' checked':''}> 誠可議</label></div>
+      <div>${F('格局','f-layout',l.layout,'text','1+1房2廳1.5衛')}</div>
     </div>`+
-    F('屋齡','f-age',l.age,'text','8 年')+
-    TA('賣點特色','f-features',l.features,80)+
-    TA('內部備註（不會出現在文案，除非你用 {{備註}}）','f-note',l.note,60)+
+
+    `<div class="sec">坪數</div>
+     <div class="grid g3">
+       <div>${F('總坪數','f-size',l.size,'text','40.13 坪')}</div>
+       <div>${F('房坪','f-sizeHouse',l.sizeHouse,'text','30.81 坪')}</div>
+       <div>${F('車坪','f-sizeParking',l.sizeParking,'text','9.32 坪')}</div>
+     </div>
+     <div class="grid g4">
+       <div>${F('主建物','f-sizeMain',l.sizeMain,'text','19.15 坪')}</div>
+       <div>${F('陽台','f-sizeBalcony',l.sizeBalcony,'text','1.33 坪')}</div>
+       <div>${F('公設','f-sizePublic',l.sizePublic,'text','10.33 坪')}</div>
+       <div>${F('土地','f-land',l.land,'text','6.31 坪')}</div>
+     </div>`+
+
+    `<div class="sec">建物</div>
+     <div class="grid g4">
+       <div>${F('樓層','f-floor',l.floor,'text','11F')}</div>
+       <div>${F('樓高','f-totalFloor',l.totalFloor,'text','15F')}</div>
+       <div>${F('屋齡','f-age',l.age,'text','1.5 年')}</div>
+       <div>${F('座向','f-facing',l.facing,'text','座東朝西')}</div>
+     </div>
+     <div class="grid g2">
+       <div>${F('戶數 / 電梯','f-units',l.units,'text','一層六戶，兩部電梯')}</div>
+       <div>${F('管理費','f-fee',l.fee,'text','3,019 元')}</div>
+     </div>`+
+    F('車位','f-parking',l.parking,'text','B4-29 坡道平面，電梯出來即是')+
+
+    `<div class="sec">文案素材</div>`+
+    TA('特色（屋況、格局、空間）','f-features',l.features,70)+
+    TA('交通與生活機能（一行一項）','f-transport',l.transport,80)+
+    F('售屋動機','f-motive',l.motive,'text','屋主有一定要賣的理由')+
+    TA('內部備註（不會出現在文案，除非你用 {{備註}}）','f-note',l.note,55)+
     `<div class="field">
        <label>照片</label>
        <div class="drop" id="f-drop" tabindex="0">
@@ -971,12 +1130,19 @@ function editListing(l){
     ()=>{
       const title=$('#f-title').value.trim();
       if(!title){toast('物件名稱必填');return false;}
-      Object.assign(l,{title,kind:$('#f-kind').value,status:$('#f-status').value,
-        price:$('#f-price').value.trim(),address:$('#f-address').value.trim(),
-        layout:$('#f-layout').value.trim(),size:$('#f-size').value.trim(),
-        floor:$('#f-floor').value.trim(),age:$('#f-age').value.trim(),
-        features:$('#f-features').value.trim(),note:$('#f-note').value.trim(),
-        photos:[...draftPhotos]});
+      const val=id=>{const e=$(id);return e?e.value.trim():'';};
+      Object.assign(l,{title,
+        kind:$('#f-kind').value,status:$('#f-status').value,usage:val('#f-usage'),
+        address:val('#f-address'),price:val('#f-price'),negotiable:$('#f-neg').checked,
+        layout:val('#f-layout'),
+        size:val('#f-size'),sizeHouse:val('#f-sizeHouse'),sizeParking:val('#f-sizeParking'),
+        sizeMain:val('#f-sizeMain'),sizeBalcony:val('#f-sizeBalcony'),
+        sizePublic:val('#f-sizePublic'),land:val('#f-land'),
+        floor:val('#f-floor'),totalFloor:val('#f-totalFloor'),age:val('#f-age'),
+        facing:val('#f-facing'),units:val('#f-units'),fee:val('#f-fee'),
+        parking:val('#f-parking'),
+        features:val('#f-features'),transport:val('#f-transport'),motive:val('#f-motive'),
+        note:val('#f-note'),photos:[...draftPhotos]});
       if(isNew)db.listings.push(l);
       save();render();
       const n=l.status==='已成交'&&wasStatus!=='已成交'
@@ -1008,12 +1174,11 @@ function wireListingDialog(l){
       return;
     }
     // 只填空欄位，不覆蓋使用者已經打好的字
-    const map={title:'#f-title',address:'#f-address',layout:'#f-layout',size:'#f-size',
-      floor:'#f-floor',age:'#f-age',price:'#f-price',features:'#f-features'};
     let filled=0,skipped=0;
     Object.entries(fields).forEach(([k,v])=>{
       if(k==='kind'){$('#f-kind').value=v;return;}
-      const el=map[k]&&$(map[k]);
+      if(k==='negotiable'){if(v==='是'){$('#f-neg').checked=true;filled++;}return;}
+      const el=$('#f-'+k);
       if(!el)return;
       if(el.value.trim()){skipped++;return;}
       el.value=v;filled++;
@@ -1054,7 +1219,7 @@ function wireListingDialog(l){
 async function addPhotos(fileList){
   const files=[...(fileList||[])].filter(f=>f.type.startsWith('image/'));
   if(!files.length)return;
-  if(draftPhotos.length+files.length>12){toast('一個物件最多 12 張照片');return;}
+  if(draftPhotos.length+files.length>30){toast('一個物件最多 30 張照片');return;}
   toast(`處理 ${files.length} 張照片…`);
   for(const f of files){
     try{
@@ -1086,7 +1251,10 @@ function renderListings(){
       <div style="min-width:0;flex:1">
         <div class="t"><span class="tag br">${esc(l.kind)}</span>
           <span class="tag ${stTag}">${esc(l.status)}</span> ${esc(l.title)}</div>
-        <div class="m">${[l.address,l.layout,l.size,l.floor,l.price].filter(Boolean).map(esc).join(' · ')}${l.photos?.length?` · 📷 ${l.photos.length} 張`:''}${posts?` · 在 ${posts} 個社團有貼文`:''}</div>
+        <div class="m">${[l.address,l.layout,l.size,
+            l.floor&&l.totalFloor?`${l.floor}/${l.totalFloor}`:l.floor,
+            l.price&&l.price+(l.negotiable?'（可議）':''),l.parking&&'含車位']
+            .filter(Boolean).map(esc).join(' · ')}${l.photos?.length?` · 📷 ${l.photos.length} 張`:''}${posts?` · 在 ${posts} 個社團有貼文`:''}</div>
       </div>
       <button class="btn g sm" data-le="${l.id}">編輯</button>
       <button class="btn g sm" data-ld="${l.id}">刪除</button>
@@ -1401,9 +1569,16 @@ function buildAIPrompt(){
   const n=Math.max(picked.length,3);
 
   const info=l?[
-    ['物件名稱',l.title],['類型',l.kind],['地址',l.address],['格局',l.layout],
-    ['坪數',l.size],['樓層',l.floor],['屋齡',l.age],['價格',l.price],['賣點',l.features],
-  ].filter(([,v])=>v).map(([k,v])=>`- ${k}：${v}`).join('\n') : '（這次不帶物件，寫通用內容）';
+    ['案名',l.title],['類型',l.kind],['地點',l.address],['用途',l.usage],
+    ['總價',l.price+(l.negotiable?'（誠可議）':'')],
+    ['坪數',l.size],['房坪',l.sizeHouse],['車坪',l.sizeParking],
+    ['主建物',l.sizeMain],['陽台',l.sizeBalcony],['公設',l.sizePublic],['土地',l.land],
+    ['格局',l.layout],['樓層',l.floor],['樓高',l.totalFloor],['屋齡',l.age],
+    ['座向',l.facing],['戶數/電梯',l.units],['管理費',l.fee],['車位',l.parking],
+    ['特色',l.features],['交通與生活機能',l.transport],['售屋動機',l.motive],
+  ].filter(([,v])=>v&&String(v).trim())
+   .map(([k,v])=>`- ${k}：${String(v).replace(/\n/g,'；')}`).join('\n')
+   : '（這次不帶物件，寫通用內容）';
 
   return `你是台灣資深房仲的文案助手。請幫我寫 ${n} 個版本的 Facebook 社團貼文。
 
@@ -1573,6 +1748,8 @@ function renderProfile(){
   const p=db.profile;
   $('#p-name').value=p.name;$('#p-title').value=p.title;$('#p-shop').value=p.shop;
   $('#p-phone').value=p.phone;$('#p-line').value=p.line;$('#p-sign').value=p.sign;
+  $('#p-license').value=p.license||'';$('#p-broker').value=p.broker||'';
+  $('#p-company').value=p.company||'';
   $('#p-keep').value=db.settings.keepDays||0;
   updateNotifyState();
 }
@@ -1586,7 +1763,9 @@ function updateNotifyState(){
 $('#p-save').addEventListener('click',()=>{
   db.profile={name:$('#p-name').value.trim(),title:$('#p-title').value.trim(),
     shop:$('#p-shop').value.trim(),phone:$('#p-phone').value.trim(),
-    line:$('#p-line').value.trim(),sign:$('#p-sign').value};
+    line:$('#p-line').value.trim(),
+    license:$('#p-license').value.trim(),broker:$('#p-broker').value.trim(),
+    company:$('#p-company').value.trim(),sign:$('#p-sign').value};
   db.settings.keepDays=Math.max(0,+$('#p-keep').value||0);
   save();render();toast('已儲存');
 });
@@ -1645,6 +1824,33 @@ $('#x-reset').addEventListener('click',async()=>{
    房仲範本（每個分類至少 2 個版本，才能輪替）
    ========================================================= */
 const SEED=[
+{cat:'物件銷售',name:'完整規格表（你的既有格式）',body:
+`{{售屋動機}}
+
+【案名】：{{案名}}
+【地點】：{{地點}}
+【用途】：{{用途}}
+【總價】：{{總價}} {{可議}}
+【坪數】：{{坪數}}（房坪 {{房坪}}／車坪 {{車坪}}）
+　　　　　主 {{主建物}}．陽台 {{陽台}}．公設 {{公設}}
+【土地】：{{土地}}
+【樓層】：{{樓層}}
+【樓高】：{{樓高}}
+【屋齡】：{{屋齡}}
+【座向】：{{座向}}
+【格局】：{{格局}}
+【戶數】：{{戶數電梯}}
+【管理費】：{{管理費}}
+【車位】：{{車位}}
+
+◆ 特色
+{{特色}}
+
+◆ 生活機能
+{{交通機能}}
+
+{{簽名檔}}`},
+
 {cat:'物件銷售',name:'物件標準貼文（售）',body:
 `🏠【{{地址}}】{{物件名稱}}
 
