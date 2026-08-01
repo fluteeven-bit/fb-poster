@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>社團貼文助手</title>
+<style>
+/* ── tokens ───────────────────────────────────────────────
+   中性色帶一點紅偏（配合中信品牌紅），不是純灰。            */
+:root{
+  --bg:#f6f4f4; --card:#fff; --field:#fff;
+  --ink:#1a181b; --ink2:#5d5760; --ink3:#8d8791;
+  --line:#e6e1e3;
+  --brand:#c8102e; --brand-soft:#fbeaed;
+  --btn:#c8102e; --btn-h:#a30d26; --btn-ink:#fff;
+  --ok:#146c42; --ok-soft:#e4f2ea;
+  --warn:#8f5f10; --warn-soft:#fbf1de; --warn-line:#ecdcb8;
+  --crit:#a8321f; --crit-soft:#fbeae6;
+  --toast:#26222a; --toast-ink:#fff;
+  --shadow:0 1px 2px rgba(30,20,25,.07),0 1px 8px rgba(30,20,25,.04);
+  --r:10px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#141317; --card:#1d1b21; --field:#26232b;
+    --ink:#eae7ec; --ink2:#a49daa; --ink3:#7a737f;
+    --line:#2e2b34;
+    --brand:#f2879c; --brand-soft:#3a1f26;
+    --btn:#cf2740; --btn-h:#e03a52; --btn-ink:#fff;
+    --ok:#5fcf94; --ok-soft:#16301f;
+    --warn:#e0ab5a; --warn-soft:#31260f; --warn-line:#4a3a15;
+    --crit:#f0836c; --crit-soft:#3a1c15;
+    --toast:#efecf1; --toast-ink:#1a181b;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+/* 檢視器的主題切換要贏過 media query（兩個方向都要） */
+:root[data-theme="light"]{
+  --bg:#f6f4f4; --card:#fff; --field:#fff;
+  --ink:#1a181b; --ink2:#5d5760; --ink3:#8d8791;
+  --line:#e6e1e3;
+  --brand:#c8102e; --brand-soft:#fbeaed;
+  --btn:#c8102e; --btn-h:#a30d26; --btn-ink:#fff;
+  --ok:#146c42; --ok-soft:#e4f2ea;
+  --warn:#8f5f10; --warn-soft:#fbf1de; --warn-line:#ecdcb8;
+  --crit:#a8321f; --crit-soft:#fbeae6;
+  --toast:#26222a; --toast-ink:#fff;
+  --shadow:0 1px 2px rgba(30,20,25,.07),0 1px 8px rgba(30,20,25,.04);
+}
+:root[data-theme="dark"]{
+  --bg:#141317; --card:#1d1b21; --field:#26232b;
+  --ink:#eae7ec; --ink2:#a49daa; --ink3:#7a737f;
+  --line:#2e2b34;
+  --brand:#f2879c; --brand-soft:#3a1f26;
+  --btn:#cf2740; --btn-h:#e03a52; --btn-ink:#fff;
+  --ok:#5fcf94; --ok-soft:#16301f;
+  --warn:#e0ab5a; --warn-soft:#31260f; --warn-line:#4a3a15;
+  --crit:#f0836c; --crit-soft:#3a1c15;
+  --toast:#efecf1; --toast-ink:#1a181b;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+
+/* ── base ───────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  /* 中文優先用系統字：CJK webfont 動輒數 MB，內嵌不划算 */
+  font:14px/1.6 "PingFang TC","Noto Sans TC","Microsoft JhengHei",
+       -apple-system,"Segoe UI",system-ui,sans-serif;
+  background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ── layout ─────────────────────────────────────────────── */
+.top{background:var(--card);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:50}
+.top-in{max-width:1220px;margin:0 auto;padding:0 20px;display:flex;
+  align-items:center;gap:20px;height:56px}
+.logo{font-weight:700;font-size:16px;color:var(--brand);white-space:nowrap;
+  letter-spacing:.01em}
+.logo small{color:var(--ink3);font-weight:400;font-size:12px;margin-left:7px;
+  letter-spacing:.04em}
+nav{display:flex;gap:2px;overflow-x:auto;flex:1;scrollbar-width:thin}
+nav button{background:none;border:0;padding:8px 12px;border-radius:7px;
+  color:var(--ink2);cursor:pointer;white-space:nowrap;font-size:13.5px;
+  display:flex;align-items:center;gap:5px}
+nav button:hover{background:var(--bg);color:var(--ink)}
+nav button.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+nav .badge{background:var(--btn);color:var(--btn-ink);border-radius:20px;
+  font-size:10.5px;font-weight:700;padding:0 5px;min-width:16px;text-align:center;
+  font-variant-numeric:tabular-nums}
+nav .badge.hide{display:none}
+main{max-width:1220px;margin:0 auto;padding:24px 20px 80px}
+.view{display:none}.view.on{display:block}
+
+/* ── primitives ─────────────────────────────────────────── */
+h2{font-size:19px;letter-spacing:-.01em}
+.sub{color:var(--ink3);font-size:13px;margin:4px 0 18px;max-width:66ch}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px;box-shadow:var(--shadow);margin-bottom:14px}
+.card h3{font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.split{display:grid;gap:14px;grid-template-columns:minmax(0,340px) minmax(0,1fr)}
+@media(max-width:900px){.g2,.g3,.g4,.split{grid-template-columns:1fr}}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sp{flex:1}
+label{display:block;font-size:12px;color:var(--ink2);margin-bottom:4px;font-weight:500}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);
+  border-radius:7px;background:var(--field);outline:0}
+input:focus,select:focus,textarea:focus{border-color:var(--brand);
+  box-shadow:0 0 0 3px var(--brand-soft);outline:0}
+textarea{resize:vertical;min-height:90px;line-height:1.7}
+.field{margin-bottom:11px}
+.btn{background:var(--btn);color:var(--btn-ink);border:0;padding:8px 15px;
+  border-radius:7px;cursor:pointer;font-weight:500;white-space:nowrap;
+  text-decoration:none;display:inline-block;line-height:1.6}
+.btn:hover{background:var(--btn-h)}
+.btn.g{background:var(--card);color:var(--ink2);border:1px solid var(--line)}
+.btn.g:hover{background:var(--bg);color:var(--ink)}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn.done{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;
+  background:var(--bg);color:var(--ink2);border:1px solid var(--line)}
+.tag.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.tag.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.tag.crit{background:var(--crit-soft);color:var(--crit);border-color:transparent}
+.tag.br{background:var(--brand-soft);color:var(--brand);border-color:transparent}
+.empty{text-align:center;padding:36px 20px;color:var(--ink3);font-size:13px;line-height:1.8}
+.hint{font-size:12px;color:var(--ink3);line-height:1.65}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
+th{text-align:left;padding:8px;color:var(--ink3);font-weight:500;font-size:12px;
+  border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+
+/* ── components ─────────────────────────────────────────── */
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 16px;box-shadow:var(--shadow)}
+.stat b{display:block;font-size:26px;line-height:1.15;font-weight:700;
+  font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--ink3)}
+.stat.hi b{color:var(--ok)}
+.stat.al b{color:var(--crit)}
+.item{border:1px solid var(--line);border-radius:8px;padding:12px;
+  margin-bottom:8px;background:var(--card)}
+.item:last-child{margin-bottom:0}
+.item.dim{opacity:.6}
+.item.alert{border-left:3px solid var(--crit)}
+.item.due{border-left:3px solid var(--warn)}
+.item .t{font-weight:600;font-size:14px}
+.item .m{font-size:12px;color:var(--ink3);margin-top:2px}
+.pick{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);
+  border-radius:8px;padding:9px 11px;margin-bottom:6px;cursor:pointer;
+  background:var(--card)}
+.pick:hover{border-color:var(--brand)}
+.pick.sel{border-color:var(--brand);background:var(--brand-soft)}
+.pick.lock{opacity:.55;background:var(--bg)}
+.pick input{width:auto;margin-top:3px;flex:0 0 auto;accent-color:var(--btn)}
+.vars{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.vars code{background:var(--bg);border:1px solid var(--line);border-radius:5px;
+  padding:2px 6px;font-size:11.5px;cursor:pointer;color:var(--ink2)}
+.vars code:hover{background:var(--brand-soft);color:var(--brand);border-color:var(--brand)}
+.step{font-size:11px;font-weight:700;color:var(--brand);letter-spacing:.08em;
+  margin-bottom:8px}
+.warn-box{background:var(--warn-soft);border:1px solid var(--warn-line);
+  border-radius:8px;padding:12px 14px;font-size:12.5px;color:var(--warn);line-height:1.7}
+.warn-box b{color:var(--ink)}
+.toast{position:fixed;bottom:24px;left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:var(--toast);color:var(--toast-ink);padding:10px 20px;
+  border-radius:8px;font-size:13.5px;opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;z-index:100;box-shadow:var(--shadow)}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+dialog{border:0;border-radius:12px;padding:0;max-width:620px;
+  width:calc(100% - 32px);background:var(--card);color:var(--ink);
+  box-shadow:0 20px 50px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(15,12,18,.55)}
+.dlg-h{padding:16px 20px;border-bottom:1px solid var(--line);font-weight:600}
+.dlg-b{padding:20px;max-height:62vh;overflow:auto}
+.dlg-f{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;
+  justify-content:flex-end}
+
+/* 發送清單：一個社團一張卡 */
+.send{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;
+  background:var(--card);overflow:hidden}
+.send.posted{opacity:.6}
+.send-h{display:flex;gap:9px;align-items:center;padding:11px 13px;flex-wrap:wrap}
+.send-h .t{font-weight:600;flex:1;min-width:120px}
+.send-b{border-top:1px solid var(--line);padding:12px 13px;background:var(--bg)}
+.send-txt{white-space:pre-wrap;font-size:13.5px;line-height:1.8;
+  background:var(--card);border:1px solid var(--line);border-radius:7px;
+  padding:11px;min-height:80px}
+.send-txt[contenteditable="true"]{border-color:var(--brand)}
+.fold{background:none;border:0;color:var(--ink3);cursor:pointer;font-size:12px;
+  padding:2px 4px}
+.fold:hover{color:var(--brand)}
+.bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--brand);border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="top"><div class="top-in">
+  <div class="logo">社團貼文助手<small>FB 多社團經營</small></div>
+  <nav id="nav"></nav>
+</div></div>
+
+<main>
+  <!-- ============ 今日待辦 ============ -->
+  <section class="view on" id="v-home">
+    <h2>今日待辦</h2>
+    <p class="sub">排程到期、該刪的貼文、可以貼的社團，都集中在這裡。</p>
+    <div class="grid g4" style="margin-bottom:18px">
+      <div class="stat hi"><b id="s-ready">0</b><span>今天可貼社團</span></div>
+      <div class="stat al"><b id="s-due">0</b><span>排程到期</span></div>
+      <div class="stat al"><b id="s-del">0</b><span>待刪貼文</span></div>
+      <div class="stat"><b id="s-week">0</b><span>近 7 天貼文</span></div>
+    </div>
+
+    <div class="card" id="c-due">
+      <h3>排程到期 <span class="tag crit" id="s-due2">0</span></h3>
+      <div id="due-list"></div>
+    </div>
+
+    <div class="card" id="c-del">
+      <h3>該刪的貼文 <span class="tag crit" id="s-del2">0</span></h3>
+      <p class="hint" style="margin-bottom:10px">
+        FB 沒有開放代刪貼文的介面，所以這裡列出「哪一則、在哪個社團、為什麼該刪」，
+        點「開社團」過去刪掉後回來按「已刪除」。
+      </p>
+      <div id="del-list"></div>
+    </div>
+
+    <div class="card">
+      <h3>可以貼了 <span class="tag ok" id="s-ready2">0</span></h3>
+      <div id="ready-list"></div>
+    </div>
+
+    <div class="card">
+      <h3>冷卻中</h3>
+      <div id="cool-list"></div>
+    </div>
+  </section>
+
+  <!-- ============ 產生貼文 ============ -->
+  <section class="view" id="v-make">
+    <h2>產生貼文</h2>
+    <p class="sub">選好來源和社團，右邊會為每個社團各自產生一份文案。同分類有多個模板時會自動輪替，避免多社團貼出一模一樣的字。</p>
+    <div class="split">
+      <div>
+        <div class="card">
+          <div class="step">STEP 1</div>
+          <h3>文案來源</h3>
+          <div class="field">
+            <label for="m-src">模板</label>
+            <select id="m-src"></select>
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label for="m-listing">帶入物件</label>
+            <select id="m-listing"></select>
+          </div>
+        </div>
+        <div class="card">
+          <div class="step">STEP 2</div>
+          <h3>選社團</h3>
+          <div class="row" style="margin-bottom:9px">
+            <button class="btn g sm" id="m-all">全選可貼</button>
+            <button class="btn g sm" id="m-none">清空</button>
+          </div>
+          <div id="m-groups"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="row" style="margin-bottom:12px">
+            <div>
+              <div class="step">STEP 3</div>
+              <h3 style="margin:0">發送清單 <span class="tag" id="m-cnt">0 個社團</span></h3>
+            </div>
+            <div class="sp"></div>
+            <button class="btn g sm" id="m-openall">全部開啟</button>
+            <button class="btn sm" id="m-doneall">全部標記已貼</button>
+          </div>
+          <div id="send-list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 排程 ============ -->
+  <section class="view" id="v-sched">
+    <div class="row"><h2>排程</h2><div class="sp"></div>
+      <button class="btn" id="q-add">新增排程</button></div>
+    <p class="sub">安排什麼時候要貼哪些社團。時間到會出現在「今日待辦」，開著這個頁面也會跳瀏覽器通知。實際送出還是你手動按，系統只負責提醒和把文案準備好。</p>
+    <div class="card"><div id="q-list"></div></div>
+  </section>
+
+  <!-- ============ 社團 ============ -->
+  <section class="view" id="v-groups">
+    <div class="row"><h2>社團清單</h2><div class="sp"></div>
+      <button class="btn" id="g-add">新增社團</button></div>
+    <p class="sub">冷卻天數＝同一社團最少間隔幾天才再貼一次。地區型社團建議 5～7 天，大型買賣社團 3 天。有些社團版規要求限時刪文，填在「版規限時刪文」欄，貼完會自動排進待刪清單。</p>
+    <div class="card"><div id="g-list"></div></div>
+  </section>
+
+  <!-- ============ 模板 ============ -->
+  <section class="view" id="v-tpls">
+    <div class="row"><h2>文案模板</h2><div class="sp"></div>
+      <button class="btn g" id="t-seed">載入房仲範本</button>
+      <button class="btn" id="t-add">新增模板</button></div>
+    <p class="sub">用 <code>{{變數}}</code> 佔位，產生貼文時自動代入物件與你的聯絡資料。<b>同分類至少留兩個版本</b>——發送清單會自動輪替，這是避免被判定灌水的關鍵。</p>
+    <div class="card"><div id="t-list"></div></div>
+  </section>
+
+  <!-- ============ 物件 ============ -->
+  <section class="view" id="v-listings">
+    <div class="row"><h2>物件資料</h2><div class="sp"></div>
+      <button class="btn" id="l-add">新增物件</button></div>
+    <p class="sub">建一次資料，所有模板共用。物件改成「已成交」時，它在各社團的貼文會自動排進待刪清單，避免客人問到已售物件。</p>
+    <div class="card"><div id="l-list"></div></div>
+  </section>
+
+  <!-- ============ 紀錄 ============ -->
+  <section class="view" id="v-log">
+    <h2>紀錄與成效</h2>
+    <p class="sub">哪個社團真的帶得到客人。每則貼文收到私訊就按「＋私訊」，累積幾週就看得出該把力氣放哪。</p>
+    <div class="card">
+      <h3>各社團成效</h3>
+      <div id="perf"></div>
+    </div>
+    <div class="card">
+      <h3>貼文紀錄</h3>
+      <div id="log-list"></div>
+    </div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section class="view" id="v-set">
+    <h2>設定</h2>
+    <p class="sub">聯絡資料會自動代入模板變數。</p>
+    <div class="grid g2">
+      <div class="card">
+        <h3>我的聯絡資料</h3>
+        <div class="field"><label for="p-name">姓名</label><input id="p-name" placeholder="你的姓名"></div>
+        <div class="field"><label for="p-title">職稱</label><input id="p-title" placeholder="不動產經紀人"></div>
+        <div class="field"><label for="p-shop">店名</label><input id="p-shop" placeholder="你的店名"></div>
+        <div class="field"><label for="p-phone">電話</label><input id="p-phone" placeholder="09xx-xxx-xxx"></div>
+        <div class="field"><label for="p-line">LINE ID</label><input id="p-line"></div>
+        <div class="field"><label for="p-sign">結尾簽名檔</label><textarea id="p-sign" style="min-height:70px"></textarea></div>
+        <button class="btn" id="p-save">儲存</button>
+      </div>
+      <div>
+        <div class="card">
+          <h3>貼文保留與提醒</h3>
+          <div class="field">
+            <label for="p-keep">預設保留天數（0 = 不自動排入待刪）</label>
+            <input id="p-keep" type="number" min="0" placeholder="30">
+            <div class="hint" style="margin-top:5px">
+              設 30 就是每則貼文滿 30 天會進待刪清單，用來定期清版面。
+              個別社團有版規限時的話，以社團設定優先。
+            </div>
+          </div>
+          <div class="row" style="margin-top:4px">
+            <button class="btn g" id="p-notify">開啟瀏覽器通知</button>
+            <span class="tag" id="notify-state">未開啟</span>
+          </div>
+          <p class="hint" style="margin-top:8px">通知只在這個分頁開著的時候有效。</p>
+        </div>
+        <div class="card">
+          <h3>資料備份</h3>
+          <p class="hint" style="margin-bottom:11px">
+            資料存在你這台裝置的瀏覽器裡，沒有上傳。換電腦或換瀏覽器不會同步，
+            清除瀏覽資料也會一併清掉——定期匯出備份。
+          </p>
+          <div class="row">
+            <button class="btn g" id="x-out">匯出 JSON</button>
+            <button class="btn g" id="x-in">匯入 JSON</button>
+            <input type="file" id="x-file" accept=".json,application/json" style="display:none">
+          </div>
+        </div>
+        <div class="card">
+          <h3>關於「全自動」</h3>
+          <div class="warn-box">
+            <b>官方 API 這條路已經斷了。</b>Meta 在 2024 年 4 月停用
+            <code>publish_to_groups</code> 權限，沒有合法途徑自動貼文或刪文。
+            市面上宣稱全自動的服務都是託管你的登入狀態去模擬操作，違反 FB 條款——
+            輕則限制發文，重則停權。<br><br>
+            <b>被踢出社團的真正原因</b>通常不是「用了工具」，而是同一社團貼太頻繁、
+            多社團同時貼一模一樣的字。所以這裡的重點是冷卻天數與模板輪替。
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="color:var(--brand)">危險操作</h3>
+          <button class="btn g" id="x-reset">清空所有資料</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="dlg">
+  <div class="dlg-h" id="dlg-h">編輯</div>
+  <div class="dlg-b" id="dlg-b"></div>
+  <div class="dlg-f">
+    <button type="button" class="btn g" id="dlg-cancel">取消</button>
+    <button type="button" class="btn" id="dlg-ok">儲存</button>
+  </div>
+</dialog>
+
+<script>
+/* =========================================================
+   儲存層（含舊資料升級）
+   ========================================================= */
+const KEY='fb-poster-v1';
+const blank={
+  groups:[],templates:[],listings:[],logs:[],schedule:[],
+  profile:{name:'',title:'',shop:'',phone:'',line:'',sign:''},
+  settings:{keepDays:0}
+};
+/** v1 存檔沒有 schedule / 保留期 / 成效欄位，補齊而不是丟掉 */
+function migrate(d){
+  const x=Object.assign(structuredClone(blank),d||{});
+  x.groups   =(x.groups||[]).map(g=>({ruleDelDays:0,...g}));
+  x.templates=(x.templates||[]);
+  x.listings =(x.listings||[]).map(l=>({status:'在售',...l}));
+  x.logs     =(x.logs||[]).map(l=>({tplId:'',listingId:'',expireAt:null,
+                                    deletedAt:null,snoozeUntil:null,flag:'',leads:0,...l}));
+  x.schedule =(x.schedule||[]);
+  x.profile  =Object.assign(structuredClone(blank.profile),x.profile||{});
+  x.settings =Object.assign(structuredClone(blank.settings),x.settings||{});
+  return x;
+}
+let db=load();
+function load(){
+  try{const r=localStorage.getItem(KEY);return migrate(r?JSON.parse(r):null);}
+  catch(e){return structuredClone(blank);}
+}
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(db));}
+  catch(e){toast('儲存失敗，瀏覽器空間可能已滿');}
+}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+/* =========================================================
+   小工具
+   ========================================================= */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let toastT;
+function toast(msg){
+  const t=$('#toast');t.textContent=msg;t.classList.add('on');
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2200);
+}
+const DAY=864e5;
+const daysSince=ts=>ts?Math.floor((Date.now()-ts)/DAY):null;
+const pad=n=>String(n).padStart(2,'0');
+function fmtDate(ts){const d=new Date(ts);
+  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`;}
+function fmtDT(ts){const d=new Date(ts);
+  return `${fmtDate(ts)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+/** <input type="datetime-local"> 需要本地時區字串，不能用 toISOString */
+function toLocalInput(ts){const d=new Date(ts);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+function ago(ts){
+  const d=daysSince(ts);
+  if(d===null)return '從未貼過';
+  if(d===0)return '今天貼過';
+  if(d===1)return '昨天貼過';
+  return `${d} 天前貼過`;
+}
+const lastPost=gid=>db.logs.filter(l=>l.groupId===gid&&!l.deletedAt)
+  .concat(db.logs.filter(l=>l.groupId===gid&&l.deletedAt))
+  .sort((a,b)=>b.at-a.at)[0]||null;
+/** 社團狀態：冷卻期過了沒 */
+function groupState(g){
+  const last=lastPost(g.id);
+  if(!last)return{ready:true,left:0,last:null};
+  const left=Math.max(0,(g.cooldown||0)-daysSince(last.at));
+  return{ready:left<=0,left,last};
+}
+const byId=(arr,id)=>arr.find(x=>x.id===id)||null;
+
+/* =========================================================
+   待刪判定 —— 四種情境集中在這裡
+   ========================================================= */
+function delReasons(log){
+  if(log.deletedAt)return [];
+  if(log.snoozeUntil&&Date.now()<log.snoozeUntil)return [];   // 「先留著」延後中
+  const rs=[];
+  const l=byId(db.listings,log.listingId);
+  if(l&&l.status==='已成交')rs.push('物件已成交');
+  if(log.flag==='需更正')rs.push('資訊要更正');
+  if(log.expireAt&&Date.now()>=log.expireAt){
+    const g=byId(db.groups,log.groupId);
+    rs.push(g&&g.ruleDelDays>0?'版規限時已到':'保留期滿，該清版面');
+  }
+  return rs;
+}
+const pendingDeletes=()=>db.logs.map(l=>({log:l,rs:delReasons(l)}))
+  .filter(x=>x.rs.length).sort((a,b)=>a.log.at-b.log.at);
+const dueSchedules=()=>db.schedule.filter(s=>!s.doneAt&&s.at<=Date.now())
+  .sort((a,b)=>a.at-b.at);
+
+/* =========================================================
+   分頁
+   ========================================================= */
+const VIEWS=[['home','今日待辦'],['make','產生貼文'],['sched','排程'],['groups','社團'],
+             ['tpls','模板'],['listings','物件'],['log','紀錄'],['set','設定']];
+$('#nav').innerHTML=VIEWS.map(([k,n],i)=>
+  `<button data-v="${k}"${i===0?' class="on"':''}>${n}<span class="badge hide" data-b="${k}"></span></button>`).join('');
+$('#nav').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-v]');if(!b)return;
+  go(b.dataset.v);
+});
+function go(v){
+  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
+  document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
+  render();window.scrollTo(0,0);
+}
+
+/* =========================================================
+   變數代入
+   ========================================================= */
+const LISTING_VARS=[['物件名稱','title'],['類型','kind'],['地址','address'],
+  ['格局','layout'],['坪數','size'],['總價','price'],['樓層','floor'],
+  ['屋齡','age'],['特色','features'],['備註','note']];
+const PROFILE_VARS=[['姓名','name'],['職稱','title'],['店名','shop'],
+  ['電話','phone'],['LINE','line'],['簽名檔','sign']];
+
+function buildVars(listing){
+  const v={};
+  LISTING_VARS.forEach(([label,k])=>v[label]=listing?(listing[k]||''):'');
+  PROFILE_VARS.forEach(([label,k])=>v[label]=db.profile[k]||'');
+  v['今天']=fmtDate(Date.now());
+  return v;
+}
+const VAR_RE=/\{\{\s*([^}]+?)\s*\}\}/g;
+/** 這一段的變數是不是「有寫但全都空值」——是的話整段丟掉，
+ *  才不會貼出「▪️ 屋齡：」「LINE：」這種空標籤。 */
+function isEmptySeg(seg,v){
+  const keys=[...seg.matchAll(VAR_RE)].map(m=>m[1]).filter(k=>v[k]!==undefined);
+  return keys.length>0&&keys.every(k=>!String(v[k]).trim());
+}
+const subst=(s,v)=>s.replace(VAR_RE,(m,k)=>v[k]!==undefined?v[k]:m);
+function fill(body,listing){
+  const v=buildVars(listing);
+  return String(body||'').split('\n').map(line=>{
+    if(!line.includes('{{'))return line;      // 純文字整行不動，標點保持原樣
+    if(isEmptySeg(line,v))return null;        // 整行變數皆空 → 刪行
+    const segs=line.split(/\s*[｜|]\s*/);      // 行內分段，避免「電話｜LINE：」只剩半邊
+    if(segs.length>1){
+      const kept=segs.filter(s=>!isEmptySeg(s,v)).map(s=>subst(s,v).trim()).filter(Boolean);
+      return kept.length?kept.join('｜'):null;
+    }
+    return subst(line,v).trimEnd();
+  }).filter(l=>l!==null).join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+
+/* =========================================================
+   對話框
+   ========================================================= */
+let dlgOk=null;
+function openDlg(title,html,onOk){
+  $('#dlg-h').textContent=title;
+  $('#dlg-b').innerHTML=html;
+  dlgOk=onOk;
+  $('#dlg').showModal();
+  const first=$('#dlg-b input,#dlg-b textarea,#dlg-b select');
+  if(first)first.focus();
+}
+function closeDlg(){dlgOk=null;$('#dlg').close();}
+$('#dlg-cancel').addEventListener('click',closeDlg);
+$('#dlg-ok').addEventListener('click',()=>{
+  // onOk 回傳 false 代表驗證沒過，維持開啟不要把使用者輸入弄丟
+  if(dlgOk&&dlgOk()===false)return;
+  closeDlg();
+});
+$('#dlg').addEventListener('cancel',()=>{dlgOk=null;});   // Esc
+// 模板編輯器：點變數／CTA 插入游標處（只註冊一次，避免重複插入）
+$('#dlg-b').addEventListener('click',e=>{
+  const c=e.target.closest('code[data-ins]');if(!c)return;
+  const ta=$('#f-body');if(!ta)return;
+  const s=ta.selectionStart,v=c.dataset.ins;
+  ta.value=ta.value.slice(0,s)+v+ta.value.slice(ta.selectionEnd);
+  ta.focus();ta.selectionStart=ta.selectionEnd=s+v.length;
+});
+const F=(label,id,val='',type='text',ph='')=>
+  `<div class="field"><label for="${id}">${label}</label>
+   <input id="${id}" type="${type}" value="${esc(val)}" placeholder="${esc(ph)}"></div>`;
+const TA=(label,id,val='',h=90)=>
+  `<div class="field"><label for="${id}">${label}</label>
+   <textarea id="${id}" style="min-height:${h}px">${esc(val)}</textarea></div>`;
+const SEL=(label,id,opts,cur)=>
+  `<div class="field"><label for="${id}">${label}</label><select id="${id}">
+   ${opts.map(o=>`<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o)}</option>`).join('')}
+   </select></div>`;
+
+/* =========================================================
+   社團
+   ========================================================= */
+function editGroup(g){
+  const isNew=!g;
+  g=g||{id:uid(),name:'',url:'',area:'',cooldown:5,members:'',note:'',ruleDelDays:0};
+  openDlg(isNew?'新增社團':'編輯社團',
+    F('社團名稱 *','f-name',g.name,'text','例：新莊買屋賣屋交流')+
+    F('社團網址','f-url',g.url,'url','https://www.facebook.com/groups/...')+
+    `<div class="grid g3">
+      <div>${F('地區 / 分類','f-area',g.area,'text','新莊')}</div>
+      <div>${F('冷卻天數','f-cd',g.cooldown,'number')}</div>
+      <div>${F('版規限時刪文（天，0=無）','f-rd',g.ruleDelDays,'number')}</div>
+    </div>`+
+    F('社團人數','f-mem',g.members,'text','2.3萬')+
+    TA('備註（版規、貼文限制）','f-note',g.note,70),
+    ()=>{
+      const name=$('#f-name').value.trim();
+      if(!name){toast('社團名稱必填');return false;}
+      Object.assign(g,{name,url:$('#f-url').value.trim(),area:$('#f-area').value.trim(),
+        cooldown:Math.max(0,+$('#f-cd').value||0),
+        ruleDelDays:Math.max(0,+$('#f-rd').value||0),
+        members:$('#f-mem').value.trim(),note:$('#f-note').value.trim()});
+      if(isNew)db.groups.push(g);
+      save();render();toast(isNew?'已新增社團':'已更新');
+    });
+}
+function renderGroups(){
+  const el=$('#g-list');
+  if(!db.groups.length){
+    el.innerHTML='<div class="empty">還沒有社團。<br>先把你常貼的 FB 社團加進來，連結貼上後就能一鍵開啟。</div>';
+    return;
+  }
+  el.innerHTML=db.groups.map(g=>{
+    const st=groupState(g);
+    const meta=[g.area,g.members?g.members+'人':'',`冷卻 ${g.cooldown} 天`,
+      g.ruleDelDays>0?`版規 ${g.ruleDelDays} 天內刪`:'',ago(st.last?.at)]
+      .filter(Boolean).map(esc).join(' · ');
+    return `<div class="item"><div class="row">
+      <div style="min-width:0;flex:1">
+        <div class="t">${esc(g.name)}</div>
+        <div class="m">${meta}${g.note?'<br>'+esc(g.note):''}</div>
+      </div>
+      <span class="tag ${st.ready?'ok':'warn'}">${st.ready?'可貼':'還有 '+st.left+' 天'}</span>
+      ${g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開啟</a>`:''}
+      <button class="btn g sm" data-ge="${g.id}">編輯</button>
+      <button class="btn g sm" data-gd="${g.id}">刪除</button>
+    </div></div>`;
+  }).join('');
+}
+
+/* =========================================================
+   模板
+   ========================================================= */
+const CATS=['物件銷售','個人品牌','社區在地','收購找屋'];
+/** 引流用的收尾話術：降低門檻、給明確下一步 */
+const CTAS=[
+  '有興趣的朋友直接私訊我，我先幫你評估適不適合，不用馬上看屋。',
+  '想知道自己家現在值多少？私訊我免費幫你查實價行情，不推銷。',
+  '這區還有幾間沒公開的，需要的話私訊我給你完整清單。',
+  '看屋時間可以配合你，平日晚上或假日都行。',
+  '不一定要成交才聊，有任何房子的問題都歡迎問我。',
+  '留言「+1」或私訊，我把詳細資料和照片傳給你。'
+];
+function editTpl(t){
+  const isNew=!t;
+  t=t||{id:uid(),name:'',cat:'物件銷售',body:''};
+  const varChips=[...LISTING_VARS.map(v=>v[0]),...PROFILE_VARS.map(v=>v[0]),'今天']
+    .map(v=>`<code data-ins="{{${v}}}">{{${v}}}</code>`).join('');
+  const ctaChips=CTAS.map((c,i)=>
+    `<code data-ins="${esc(c)}" title="${esc(c)}">CTA ${i+1}：${esc(c.slice(0,14))}…</code>`).join('');
+  openDlg(isNew?'新增模板':'編輯模板',
+    F('模板名稱 *','f-name',t.name,'text','例：三房電梯 標準貼文')+
+    SEL('分類','f-cat',CATS,t.cat)+
+    TA('文案內容','f-body',t.body,220)+
+    `<div class="hint">點一下插入游標處：</div><div class="vars">${varChips}</div>
+     <div class="hint" style="margin-top:10px">引流收尾話術：</div><div class="vars">${ctaChips}</div>`,
+    ()=>{
+      const name=$('#f-name').value.trim();
+      if(!name){toast('模板名稱必填');return false;}
+      Object.assign(t,{name,cat:$('#f-cat').value,body:$('#f-body').value});
+      if(isNew)db.templates.push(t);
+      save();render();toast(isNew?'已新增模板':'已更新');
+    });
+}
+function renderTpls(){
+  const el=$('#t-list');
+  if(!db.templates.length){
+    el.innerHTML='<div class="empty">還沒有模板。<br>先按右上「載入房仲範本」，拿現成的改比從零寫快。</div>';
+    return;
+  }
+  const byCat={};
+  db.templates.forEach(t=>(byCat[t.cat]=byCat[t.cat]||[]).push(t));
+  el.innerHTML=Object.entries(byCat).map(([cat,list])=>`
+    <div class="row" style="margin:14px 0 8px">
+      <span class="tag br">${esc(cat)}</span>
+      <span class="hint">${list.length} 個版本${list.length<2?'　←　建議至少 2 個才能輪替':''}</span>
+    </div>
+    ${list.map(t=>`<div class="item">
+      <div class="row" style="margin-bottom:6px">
+        <div class="t" style="flex:1;min-width:0">${esc(t.name)}</div>
+        <button class="btn g sm" data-te="${t.id}">編輯</button>
+        <button class="btn g sm" data-tc="${t.id}">複製</button>
+        <button class="btn g sm" data-td="${t.id}">刪除</button>
+      </div>
+      <div style="white-space:pre-wrap;color:var(--ink2);font-size:12.5px;max-height:66px;overflow:hidden">${esc(t.body)}</div>
+    </div>`).join('')}`).join('');
+}
+
+/* =========================================================
+   物件
+   ========================================================= */
+const STATUSES=['在售','已成交','已下架'];
+function editListing(l){
+  const isNew=!l;
+  l=l||{id:uid(),title:'',kind:'售',status:'在售',address:'',layout:'',size:'',
+        price:'',floor:'',age:'',features:'',note:''};
+  const wasStatus=l.status;
+  openDlg(isNew?'新增物件':'編輯物件',
+    F('物件名稱 *','f-title',l.title,'text','例：幸福路 三房電梯')+
+    `<div class="grid g3">
+      <div>${SEL('類型','f-kind',['售','租'],l.kind)}</div>
+      <div>${SEL('狀態','f-status',STATUSES,l.status)}</div>
+      <div>${F('總價 / 租金','f-price',l.price,'text','1,280 萬')}</div>
+    </div>`+
+    F('地址 / 位置','f-address',l.address,'text','新北市新莊區幸福路')+
+    `<div class="grid g3">
+      <div>${F('格局','f-layout',l.layout,'text','3房2廳2衛')}</div>
+      <div>${F('坪數','f-size',l.size,'text','32.5 坪')}</div>
+      <div>${F('樓層','f-floor',l.floor,'text','7/12F')}</div>
+    </div>`+
+    F('屋齡','f-age',l.age,'text','8 年')+
+    TA('賣點特色','f-features',l.features,80)+
+    TA('內部備註（不會出現在文案，除非你用 {{備註}}）','f-note',l.note,60),
+    ()=>{
+      const title=$('#f-title').value.trim();
+      if(!title){toast('物件名稱必填');return false;}
+      Object.assign(l,{title,kind:$('#f-kind').value,status:$('#f-status').value,
+        price:$('#f-price').value.trim(),address:$('#f-address').value.trim(),
+        layout:$('#f-layout').value.trim(),size:$('#f-size').value.trim(),
+        floor:$('#f-floor').value.trim(),age:$('#f-age').value.trim(),
+        features:$('#f-features').value.trim(),note:$('#f-note').value.trim()});
+      if(isNew)db.listings.push(l);
+      save();render();
+      const n=l.status==='已成交'&&wasStatus!=='已成交'
+        ? db.logs.filter(x=>x.listingId===l.id&&!x.deletedAt).length : 0;
+      toast(n?`已成交，${n} 則舊貼文已排進待刪清單`:(isNew?'已新增物件':'已更新'));
+    });
+}
+function renderListings(){
+  const el=$('#l-list');
+  if(!db.listings.length){el.innerHTML='<div class="empty">還沒有物件資料。</div>';return;}
+  el.innerHTML=db.listings.map(l=>{
+    const posts=db.logs.filter(x=>x.listingId===l.id&&!x.deletedAt).length;
+    const stTag=l.status==='在售'?'ok':(l.status==='已成交'?'crit':'');
+    return `<div class="item"><div class="row">
+      <div style="min-width:0;flex:1">
+        <div class="t"><span class="tag br">${esc(l.kind)}</span>
+          <span class="tag ${stTag}">${esc(l.status)}</span> ${esc(l.title)}</div>
+        <div class="m">${[l.address,l.layout,l.size,l.floor,l.price].filter(Boolean).map(esc).join(' · ')}${posts?` · 在 ${posts} 個社團有貼文`:''}</div>
+      </div>
+      <button class="btn g sm" data-le="${l.id}">編輯</button>
+      <button class="btn g sm" data-ld="${l.id}">刪除</button>
+    </div></div>`;
+  }).join('');
+}
+
+/* =========================================================
+   排程
+   ========================================================= */
+function editSched(s){
+  const isNew=!s;
+  const soon=Date.now()+2*36e5;
+  s=s||{id:uid(),at:soon,groupIds:[],src:'',listingId:'',note:'',doneAt:null};
+  const srcOpts=[`<option value="">— 選擇模板或分類 —</option>`,
+    ...CATS.filter(c=>db.templates.some(t=>t.cat===c))
+      .map(c=>`<option value="c:${esc(c)}"${s.src==='c:'+c?' selected':''}>🔀 ${esc(c)}（自動輪替）</option>`),
+    ...db.templates.map(t=>`<option value="t:${t.id}"${s.src==='t:'+t.id?' selected':''}>[${esc(t.cat)}] ${esc(t.name)}</option>`)
+  ].join('');
+  const lstOpts=[`<option value="">— 不帶入物件 —</option>`,
+    ...db.listings.map(l=>`<option value="${l.id}"${s.listingId===l.id?' selected':''}>${esc(l.title)}（${esc(l.status)}）</option>`)
+  ].join('');
+  openDlg(isNew?'新增排程':'編輯排程',
+    `<div class="field"><label for="f-at">時間 *</label>
+      <input id="f-at" type="datetime-local" value="${toLocalInput(s.at)}"></div>
+     <div class="field"><label for="f-src">文案來源</label><select id="f-src">${srcOpts}</select></div>
+     <div class="field"><label for="f-lst">帶入物件</label><select id="f-lst">${lstOpts}</select></div>
+     <div class="field"><label>社團 *</label>
+       ${db.groups.length?db.groups.map(g=>`<label class="pick">
+         <input type="checkbox" data-qg="${g.id}"${s.groupIds.includes(g.id)?' checked':''}>
+         <div style="flex:1;min-width:0"><div style="font-weight:500">${esc(g.name)}</div>
+         <div class="m">${esc(g.area||'')}</div></div></label>`).join('')
+        :'<div class="hint">還沒有社團，先到「社團」分頁新增。</div>'}
+     </div>`+
+    F('備註','f-note',s.note,'text','例：週末檔期主打'),
+    ()=>{
+      const at=$('#f-at').value;
+      if(!at){toast('請選時間');return false;}
+      const gs=[...$('#dlg-b').querySelectorAll('input[data-qg]:checked')].map(x=>x.dataset.qg);
+      if(!gs.length){toast('至少選一個社團');return false;}
+      Object.assign(s,{at:new Date(at).getTime(),groupIds:gs,src:$('#f-src').value,
+        listingId:$('#f-lst').value,note:$('#f-note').value.trim()});
+      if(isNew)db.schedule.push(s);
+      save();render();toast(isNew?'已排程':'已更新');
+    });
+}
+function schedLabel(s){
+  if(s.src.startsWith('c:'))return '🔀 '+s.src.slice(2)+'（輪替）';
+  const t=byId(db.templates,s.src.slice(2));
+  return t?t.name:'（未選模板）';
+}
+function renderSched(){
+  const el=$('#q-list');
+  const list=[...db.schedule].sort((a,b)=>(a.doneAt?1:0)-(b.doneAt?1:0)||a.at-b.at);
+  if(!list.length){
+    el.innerHTML='<div class="empty">還沒有排程。<br>把這週要貼的檔期先排好，時間到系統會提醒你。</div>';
+    return;
+  }
+  el.innerHTML=list.map(s=>{
+    const due=!s.doneAt&&s.at<=Date.now();
+    const names=s.groupIds.map(id=>byId(db.groups,id)?.name).filter(Boolean);
+    const l=byId(db.listings,s.listingId);
+    return `<div class="item ${s.doneAt?'dim':''} ${due?'due':''}"><div class="row">
+      <div style="min-width:0;flex:1">
+        <div class="t">${fmtDT(s.at)}　<span class="tag">${esc(schedLabel(s))}</span>
+          ${l?`<span class="tag br">${esc(l.title)}</span>`:''}</div>
+        <div class="m">${names.length?esc(names.join('、')):'（社團已刪除）'}${s.note?' · '+esc(s.note):''}</div>
+      </div>
+      ${s.doneAt?`<span class="tag ok">已完成 ${fmtDate(s.doneAt)}</span>`
+        :`${due?'<span class="tag warn">到期</span>':''}
+          <button class="btn sm" data-qgo="${s.id}">去產生</button>
+          <button class="btn g sm" data-qdone="${s.id}">標記完成</button>`}
+      <button class="btn g sm" data-qe="${s.id}">編輯</button>
+      <button class="btn g sm" data-qd="${s.id}">刪除</button>
+    </div></div>`;
+  }).join('');
+}
+
+/* =========================================================
+   今日待辦
+   ========================================================= */
+function renderHome(){
+  const states=db.groups.map(g=>({g,st:groupState(g)}));
+  const ready=states.filter(x=>x.st.ready);
+  const cool=states.filter(x=>!x.st.ready).sort((a,b)=>a.st.left-b.st.left);
+  const due=dueSchedules(), del=pendingDeletes();
+
+  $('#s-ready').textContent=ready.length; $('#s-ready2').textContent=ready.length;
+  $('#s-due').textContent=due.length;     $('#s-due2').textContent=due.length;
+  $('#s-del').textContent=del.length;     $('#s-del2').textContent=del.length;
+  $('#s-week').textContent=db.logs.filter(l=>Date.now()-l.at<7*DAY).length;
+
+  $('#c-due').style.display=due.length?'':'none';
+  $('#c-del').style.display=del.length?'':'none';
+
+  $('#due-list').innerHTML=due.map(s=>{
+    const names=s.groupIds.map(id=>byId(db.groups,id)?.name).filter(Boolean);
+    return `<div class="item due"><div class="row">
+      <div style="min-width:0;flex:1">
+        <div class="t">${fmtDT(s.at)}　${esc(schedLabel(s))}</div>
+        <div class="m">${esc(names.join('、'))}${s.note?' · '+esc(s.note):''}</div>
+      </div>
+      <button class="btn sm" data-qgo="${s.id}">去產生</button>
+      <button class="btn g sm" data-qdone="${s.id}">標記完成</button>
+    </div></div>`;}).join('');
+
+  $('#del-list').innerHTML=del.map(({log,rs})=>{
+    const g=byId(db.groups,log.groupId);
+    return `<div class="item alert"><div class="row">
+      <div style="min-width:0;flex:1">
+        <div class="t">${esc(g?g.name:'（社團已刪除）')}</div>
+        <div class="m">${fmtDate(log.at)} 貼的${log.listingName?' · '+esc(log.listingName):''}
+          · <b style="color:var(--crit)">${esc(rs.join('、'))}</b></div>
+      </div>
+      ${g&&g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開社團</a>`:''}
+      <button class="btn sm" data-deldone="${log.id}">已刪除</button>
+      <button class="btn g sm" data-delskip="${log.id}">先留著</button>
+    </div></div>`;}).join('');
+
+  $('#ready-list').innerHTML=ready.length?ready.map(({g,st})=>
+    `<div class="item"><div class="row">
+      <div style="min-width:0;flex:1">
+        <div class="t">${esc(g.name)}</div>
+        <div class="m">${g.area?esc(g.area)+' · ':''}${ago(st.last?.at)}</div>
+      </div>
+      ${g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開社團</a>`:''}
+    </div></div>`).join('')
+    : `<div class="empty">${db.groups.length?'全部社團都在冷卻中，今天先休息。':'還沒有社團資料，先到「社團」分頁新增。'}</div>`;
+
+  $('#cool-list').innerHTML=cool.length?cool.map(({g,st})=>
+    `<div class="item dim"><div class="row">
+      <div style="min-width:0;flex:1">
+        <div class="t">${esc(g.name)}</div><div class="m">${ago(st.last?.at)}</div>
+      </div>
+      <span class="tag warn">再等 ${st.left} 天</span>
+    </div></div>`).join('')
+    : '<div class="empty">沒有冷卻中的社團。</div>';
+
+  // 導覽列徽章
+  const badges={home:due.length+del.length,sched:due.length};
+  document.querySelectorAll('#nav .badge').forEach(b=>{
+    const n=badges[b.dataset.b]||0;
+    b.textContent=n;b.classList.toggle('hide',!n);
+  });
+}
+
+/* =========================================================
+   產生貼文 —— 一個社團一張卡，模板自動輪替
+   ========================================================= */
+let picked=[];                 // 保持選取順序，輪替才穩定
+let drafts={};                 // groupId -> 使用者改過的文案
+let posted={};                 // groupId -> true（這一輪已標記）
+let openFold=null;
+
+function srcTemplates(){
+  const v=$('#m-src').value;
+  if(!v)return [];
+  if(v.startsWith('c:'))return db.templates.filter(t=>t.cat===v.slice(2));
+  const t=byId(db.templates,v.slice(2));
+  return t?[t]:[];
+}
+/** 第 i 個社團拿第 i%n 個模板 —— 同一批不會全部長一樣 */
+const tplFor=i=>{const ts=srcTemplates();return ts.length?ts[i%ts.length]:null;};
+const textFor=(gid,i)=>{
+  if(drafts[gid]!==undefined)return drafts[gid];
+  const t=tplFor(i);
+  return t?fill(t.body,byId(db.listings,$('#m-listing').value)):'';
+};
+
+function renderMake(){
+  const src=$('#m-src'), lst=$('#m-listing');
+  const keepS=src.value, keepL=lst.value;
+  src.innerHTML=['<option value="">— 選擇模板或分類 —</option>',
+    ...CATS.filter(c=>db.templates.some(t=>t.cat===c)).map(c=>{
+      const n=db.templates.filter(t=>t.cat===c).length;
+      return `<option value="c:${esc(c)}">🔀 ${esc(c)}（${n} 個版本自動輪替）</option>`;}),
+    ...db.templates.map(t=>`<option value="t:${t.id}">[${esc(t.cat)}] ${esc(t.name)}</option>`)
+  ].join('');
+  lst.innerHTML=['<option value="">— 不帶入物件 —</option>',
+    ...db.listings.map(l=>`<option value="${l.id}">${esc(l.title)}（${esc(l.status)}）</option>`)
+  ].join('');
+  src.value=keepS; lst.value=keepL;
+
+  $('#m-groups').innerHTML=db.groups.length?db.groups.map(g=>{
+    const st=groupState(g), on=picked.includes(g.id);
+    return `<label class="pick ${on?'sel':''} ${st.ready?'':'lock'}">
+      <input type="checkbox" data-gp="${g.id}"${on?' checked':''}>
+      <div style="min-width:0;flex:1">
+        <div style="font-weight:500">${esc(g.name)}</div>
+        <div class="m">${st.ready?'可貼 · '+ago(st.last?.at):'冷卻中，再等 '+st.left+' 天'}</div>
+      </div>
+    </label>`;
+  }).join('') : '<div class="empty">先到「社團」分頁新增社團。</div>';
+
+  $('#m-cnt').textContent=picked.length+' 個社團';
+  renderSend();
+}
+function renderSend(){
+  const el=$('#send-list');
+  if(!picked.length){el.innerHTML='<div class="empty">左邊選社團後，這裡會為每個社團各產生一份文案。</div>';return;}
+  if(!srcTemplates().length){el.innerHTML='<div class="empty">先在 STEP 1 選文案來源。</div>';return;}
+  el.innerHTML=picked.map((gid,i)=>{
+    const g=byId(db.groups,gid);if(!g)return '';
+    const t=tplFor(i), txt=textFor(gid,i), open=openFold===gid;
+    return `<div class="send ${posted[gid]?'posted':''}">
+      <div class="send-h">
+        <span class="tag br num">${i+1}</span>
+        <div class="t">${esc(g.name)}</div>
+        <span class="tag">${esc(t?t.name:'')}</span>
+        <span class="tag num">${txt.length} 字</span>
+        <button class="fold" data-fold="${gid}">${open?'收合 ▲':'看文案 ▼'}</button>
+        <button class="btn g sm" data-copy="${gid}">複製</button>
+        ${g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開社團</a>`:''}
+        <button class="btn sm ${posted[gid]?'done':''}" data-post="${gid}">${posted[gid]?'✓ 已貼':'標記已貼'}</button>
+      </div>
+      ${open?`<div class="send-b">
+        <div class="send-txt" contenteditable="true" data-draft="${gid}">${esc(txt)}</div>
+        <div class="hint" style="margin-top:6px">可以直接在這裡改，改完的內容只影響這個社團。</div>
+      </div>`:''}
+    </div>`;
+  }).join('');
+}
+function markPosted(gid,i){
+  const g=byId(db.groups,gid);if(!g||posted[gid])return;
+  const t=tplFor(i), l=byId(db.listings,$('#m-listing').value);
+  const at=Date.now();
+  const keep=g.ruleDelDays>0?g.ruleDelDays:(db.settings.keepDays||0);
+  db.logs.push({id:uid(),groupId:gid,at,
+    tplId:t?t.id:'',tplName:t?t.name:'（自訂）',
+    listingId:l?l.id:'',listingName:l?l.title:'',
+    text:textFor(gid,i),expireAt:keep>0?at+keep*DAY:null,
+    deletedAt:null,snoozeUntil:null,flag:'',leads:0});
+  posted[gid]=true;
+}
+$('#m-src').addEventListener('change',()=>{drafts={};openFold=null;renderSend();});
+$('#m-listing').addEventListener('change',()=>{drafts={};renderSend();});
+$('#m-groups').addEventListener('change',e=>{
+  const cb=e.target.closest('input[data-gp]');if(!cb)return;
+  const gid=cb.dataset.gp, g=byId(db.groups,gid), st=groupState(g);
+  if(cb.checked&&!st.ready&&
+     !confirm(`「${g.name}」還在冷卻期（再 ${st.left} 天）。\n提前貼容易被版主盯上，確定要選嗎？`)){
+    cb.checked=false;return;
+  }
+  if(cb.checked){if(!picked.includes(gid))picked.push(gid);}
+  else picked=picked.filter(x=>x!==gid);
+  renderMake();
+});
+$('#m-all').addEventListener('click',()=>{
+  db.groups.forEach(g=>{if(groupState(g).ready&&!picked.includes(g.id))picked.push(g.id);});
+  renderMake();});
+$('#m-none').addEventListener('click',()=>{picked=[];drafts={};posted={};renderMake();});
+$('#m-openall').addEventListener('click',()=>{
+  const urls=picked.map(id=>byId(db.groups,id)).filter(g=>g&&g.url).map(g=>g.url);
+  if(!urls.length){toast('已選社團沒有填網址');return;}
+  urls.forEach(u=>window.open(u,'_blank','noopener'));
+});
+$('#m-doneall').addEventListener('click',()=>{
+  const todo=picked.filter(g=>!posted[g]);
+  if(!todo.length){toast('沒有待標記的社團');return;}
+  if(!confirm(`把 ${todo.length} 個社團都標記為已貼？`))return;
+  picked.forEach((gid,i)=>markPosted(gid,i));
+  save();render();toast(`已記錄 ${todo.length} 筆貼文`);
+});
+async function copyText(txt){
+  try{await navigator.clipboard.writeText(txt);return true;}
+  catch(e){
+    const ta=document.createElement('textarea');
+    ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    let ok=false;try{ok=document.execCommand('copy');}catch(e2){}
+    ta.remove();return ok;
+  }
+}
+$('#send-list').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-fold],[data-copy],[data-post]');if(!b)return;
+  const d=b.dataset;
+  if(d.fold){openFold=openFold===d.fold?null:d.fold;renderSend();return;}
+  if(d.copy){
+    const i=picked.indexOf(d.copy);
+    const ok=await copyText(textFor(d.copy,i));
+    toast(ok?'已複製，去社團貼上':'複製失敗，請展開後手動選取');
+    return;
+  }
+  if(d.post){
+    const i=picked.indexOf(d.post);
+    markPosted(d.post,i);save();render();toast('已記錄');
+  }
+});
+$('#send-list').addEventListener('input',e=>{
+  const el=e.target.closest('[data-draft]');if(!el)return;
+  drafts[el.dataset.draft]=el.innerText;
+});
+
+/* =========================================================
+   紀錄與成效
+   ========================================================= */
+function renderPerf(){
+  const el=$('#perf');
+  if(!db.logs.length){el.innerHTML='<div class="empty">還沒有資料。貼文並記錄私訊數之後，這裡會告訴你哪個社團值得繼續經營。</div>';return;}
+  const rows=db.groups.map(g=>{
+    const ls=db.logs.filter(l=>l.groupId===g.id);
+    const leads=ls.reduce((s,l)=>s+(l.leads||0),0);
+    return{name:g.name,posts:ls.length,leads,rate:ls.length?leads/ls.length:0};
+  }).filter(r=>r.posts).sort((a,b)=>b.rate-a.rate||b.leads-a.leads);
+  if(!rows.length){el.innerHTML='<div class="empty">還沒有資料。</div>';return;}
+  const max=Math.max(...rows.map(r=>r.rate),0.001);
+  el.innerHTML=`<div class="tbl-wrap"><table><thead><tr>
+    <th>社團</th><th class="r">貼文</th><th class="r">私訊</th><th class="r">每則平均</th><th style="width:110px"></th>
+  </tr></thead><tbody>${rows.map(r=>`<tr>
+    <td>${esc(r.name)}</td>
+    <td class="r num">${r.posts}</td>
+    <td class="r num">${r.leads}</td>
+    <td class="r num">${r.rate.toFixed(2)}</td>
+    <td><div class="bar"><i style="width:${Math.round(r.rate/max*100)}%"></i></div></td>
+  </tr>`).join('')}</tbody></table></div>
+  <p class="hint" style="margin-top:9px">「每則平均」＝這個社團平均一則貼文帶來幾組私訊。數字低的社團可以拉長冷卻天數，把力氣挪到高的那幾個。</p>`;
+}
+function renderLog(){
+  const el=$('#log-list');
+  const logs=[...db.logs].sort((a,b)=>b.at-a.at).slice(0,200);
+  if(!logs.length){el.innerHTML='<div class="empty">還沒有貼文紀錄。</div>';return;}
+  el.innerHTML=`<div class="tbl-wrap"><table><thead><tr>
+    <th style="width:100px">日期</th><th>社團</th><th>模板 / 物件</th>
+    <th class="r" style="width:60px">私訊</th><th>狀態</th><th style="width:200px"></th>
+  </tr></thead><tbody>${logs.map(l=>{
+    const g=byId(db.groups,l.groupId);
+    const rs=delReasons(l);
+    const snoozed=!l.deletedAt&&l.snoozeUntil&&Date.now()<l.snoozeUntil;
+    const state=l.deletedAt?`<span class="tag">已刪 ${fmtDate(l.deletedAt)}</span>`
+      : rs.length?`<span class="tag crit">${esc(rs[0])}</span>`
+      : snoozed?`<span class="tag warn">${fmtDate(l.snoozeUntil)} 再提醒</span>`
+      : l.expireAt?`<span class="tag">${Math.ceil((l.expireAt-Date.now())/DAY)} 天後到期</span>`
+      : '<span class="tag ok">上架中</span>';
+    return `<tr>
+      <td class="num">${fmtDate(l.at)}</td>
+      <td>${esc(g?g.name:'（已刪除）')}</td>
+      <td style="color:var(--ink2)">${esc(l.tplName)}${l.listingName?' · '+esc(l.listingName):''}</td>
+      <td class="r num">${l.leads||0}</td>
+      <td>${state}</td>
+      <td class="row" style="gap:5px;flex-wrap:nowrap">
+        <button class="btn g sm" data-lead="${l.id}">＋私訊</button>
+        ${l.deletedAt?'':`<button class="btn g sm" data-fix="${l.id}" title="標記需更正，會排進待刪清單">${l.flag==='需更正'?'取消更正':'需更正'}</button>`}
+        <button class="btn g sm" data-logd="${l.id}">刪</button>
+      </td>
+    </tr>`;}).join('')}</tbody></table></div>`;
+}
+
+/* =========================================================
+   設定
+   ========================================================= */
+function renderProfile(){
+  const p=db.profile;
+  $('#p-name').value=p.name;$('#p-title').value=p.title;$('#p-shop').value=p.shop;
+  $('#p-phone').value=p.phone;$('#p-line').value=p.line;$('#p-sign').value=p.sign;
+  $('#p-keep').value=db.settings.keepDays||0;
+  updateNotifyState();
+}
+function updateNotifyState(){
+  const el=$('#notify-state');
+  if(!('Notification' in window)){el.textContent='瀏覽器不支援';return;}
+  const s=Notification.permission;
+  el.textContent=s==='granted'?'已開啟':(s==='denied'?'已被封鎖':'未開啟');
+  el.className='tag '+(s==='granted'?'ok':(s==='denied'?'crit':''));
+}
+$('#p-save').addEventListener('click',()=>{
+  db.profile={name:$('#p-name').value.trim(),title:$('#p-title').value.trim(),
+    shop:$('#p-shop').value.trim(),phone:$('#p-phone').value.trim(),
+    line:$('#p-line').value.trim(),sign:$('#p-sign').value};
+  db.settings.keepDays=Math.max(0,+$('#p-keep').value||0);
+  save();render();toast('已儲存');
+});
+$('#p-notify').addEventListener('click',async()=>{
+  if(!('Notification' in window)){toast('這個瀏覽器不支援通知');return;}
+  try{await Notification.requestPermission();}catch(e){}
+  updateNotifyState();
+});
+$('#x-out').addEventListener('click',()=>{
+  const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);
+  a.download=`社團貼文助手-備份-${fmtDate(Date.now()).replace(/\//g,'')}.json`;
+  a.click();URL.revokeObjectURL(a.href);toast('已匯出');
+});
+$('#x-in').addEventListener('click',()=>$('#x-file').click());
+$('#x-file').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result);
+      if(!d||typeof d!=='object'||Array.isArray(d))throw new Error('bad');
+      if(!confirm('匯入會覆蓋目前所有資料，確定嗎？'))return;
+      db=migrate(d);save();render();renderProfile();toast('匯入完成');
+    }catch(err){toast('檔案格式不正確');}
+  };
+  r.readAsText(f);e.target.value='';
+});
+$('#x-reset').addEventListener('click',()=>{
+  if(!confirm('會清空社團、模板、物件、排程、紀錄全部資料，無法復原。確定？'))return;
+  if(!confirm('再確認一次：真的要清空嗎？'))return;
+  db=structuredClone(blank);picked=[];drafts={};posted={};
+  save();render();renderProfile();toast('已清空');
+});
+
+/* =========================================================
+   房仲範本（每個分類至少 2 個版本，才能輪替）
+   ========================================================= */
+const SEED=[
+{cat:'物件銷售',name:'物件標準貼文（售）',body:
+`🏠【{{地址}}】{{物件名稱}}
+
+▪️ 格局：{{格局}}
+▪️ 坪數：{{坪數}}
+▪️ 樓層：{{樓層}}
+▪️ 屋齡：{{屋齡}}
+▪️ 開價：{{總價}}
+
+{{特色}}
+
+有興趣的朋友歡迎私訊，我可以先幫你評估適不適合，
+不用馬上看屋，先聊聊需求也可以。
+
+{{姓名}}｜{{店名}}
+☎️ {{電話}}
+LINE：{{LINE}}`},
+
+{cat:'物件銷售',name:'物件輕鬆口吻',body:
+`最近手上這間 {{物件名稱}} 蠻多人問的，簡單分享一下～
+
+位置在 {{地址}}，{{格局}}、{{坪數}}，{{樓層}}。
+{{特色}}
+
+價格 {{總價}}，有需求的鄰居可以私訊我，
+我把實際狀況跟你說清楚，合不合適你自己判斷。
+
+{{姓名}}／{{店名}} {{電話}}`},
+
+{cat:'物件銷售',name:'物件問句開場',body:
+`在 {{地址}} 附近找 {{格局}} 的朋友，這間可以看一下。
+
+{{坪數}}，{{樓層}}，屋齡 {{屋齡}}。
+{{特色}}
+
+開價 {{總價}}。
+留言或私訊都可以，我把詳細資料和照片傳給你。
+
+{{姓名}}｜{{店名}}｜{{電話}}`},
+
+{cat:'社區在地',name:'社區在地服務貼',body:
+`大家好，我是在地服務的 {{姓名}}，{{店名}}。
+
+在這個區域跑了一段時間，社區的行情、管理費、停車位狀況大概都摸熟了。
+如果你正在考慮買、賣，或只是想知道自己家現在值多少，
+都可以直接問我，不用擔心被推銷。
+
+估價、行情查詢都免費，回覆可能慢一點但一定會回。
+
+{{電話}}｜LINE：{{LINE}}`},
+
+{cat:'社區在地',name:'社區行情觀察',body:
+`最近整理了一下這區的成交狀況，分享給鄰居參考。
+
+同社區同格局，屋況和樓層差一點，總價可以差到七位數。
+所以看到「隔壁賣多少」的數字，不用太快下結論，
+實際還是要看屋況、朝向、有沒有車位。
+
+想知道自己家現在的行情，私訊我免費幫你查，不推銷。
+
+{{姓名}}｜{{店名}}`},
+
+{cat:'個人品牌',name:'成交心得分享',body:
+`今天順利幫一位屋主完成交割，想分享一個小心得。
+
+很多人賣房子第一個想到的是「開高一點再讓」，
+但實務上開太高，前兩週的黃金曝光期就浪費掉了，
+後面再降價，買方反而會覺得「是不是有問題」。
+
+合理定價 + 完整揭露，成交速度差很多。
+
+有任何房子的問題都歡迎問我，不一定要成交才聊。
+
+{{姓名}}｜{{店名}}`},
+
+{cat:'個人品牌',name:'買方常見問題',body:
+`最近被問最多的一題：「現在該不該進場？」
+
+老實說沒有標準答案，但有幾個問題可以先問自己：
+自備款夠不夠、貸款月付佔收入幾成、這間打算住幾年。
+這三題答得出來，時機的問題其實就沒那麼難。
+
+如果想聊聊自己的狀況，私訊我，我幫你算清楚再決定。
+
+{{姓名}}｜{{店名}}｜{{電話}}`},
+
+{cat:'收購找屋',name:'買方需求徵求',body:
+`【誠意買方 委託找屋】
+
+手上有一組客戶正在找：
+📍 區域：{{地址}}
+🏠 需求：{{格局}}、{{坪數}}左右
+💰 預算：{{總價}}
+
+如果你剛好有想賣，或知道鄰居有意願，
+歡迎私訊我，我會親自過去看，不會亂帶人打擾。
+
+{{姓名}}｜{{店名}}｜{{電話}}`},
+
+{cat:'收購找屋',name:'屋主託售徵求',body:
+`如果你家有在考慮出售，可以先私訊我聊聊，不用馬上簽委託。
+
+我可以先幫你做兩件事：
+一、查同社區近期實價登錄，抓出合理的價格帶。
+二、告訴你哪些小地方整理一下，可以讓看屋印象差很多。
+
+這兩件事都免費，你評估完再決定要不要委託都可以。
+
+{{姓名}}｜{{店名}}｜{{電話}}`}
+];
+$('#t-seed').addEventListener('click',()=>{
+  const added=SEED.filter(s=>!db.templates.some(t=>t.name===s.name))
+    .map(s=>({id:uid(),...s}));
+  if(!added.length){toast('範本都已經在清單裡了');return;}
+  db.templates.push(...added);save();render();toast(`已載入 ${added.length} 個範本`);
+});
+
+/* =========================================================
+   全域事件
+   ========================================================= */
+$('#g-add').addEventListener('click',()=>editGroup());
+$('#t-add').addEventListener('click',()=>editTpl());
+$('#l-add').addEventListener('click',()=>editListing());
+$('#q-add').addEventListener('click',()=>editSched());
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-ge],button[data-gd],button[data-te],button[data-tc],'+
+    'button[data-td],button[data-le],button[data-ld],button[data-logd],button[data-qe],'+
+    'button[data-qd],button[data-qdone],button[data-qgo],button[data-deldone],'+
+    'button[data-delskip],button[data-lead],button[data-fix]');
+  if(!b)return;
+  const d=b.dataset;
+
+  if(d.ge)editGroup(byId(db.groups,d.ge));
+  if(d.te)editTpl(byId(db.templates,d.te));
+  if(d.le)editListing(byId(db.listings,d.le));
+  if(d.qe)editSched(byId(db.schedule,d.qe));
+
+  if(d.tc){
+    const t=byId(db.templates,d.tc);
+    db.templates.push({...t,id:uid(),name:t.name+'（複本）'});
+    save();render();toast('已複製模板');
+  }
+  if(d.gd){
+    const g=byId(db.groups,d.gd);
+    if(confirm(`刪除社團「${g.name}」？相關貼文紀錄會保留。`)){
+      db.groups=db.groups.filter(x=>x.id!==d.gd);
+      picked=picked.filter(x=>x!==d.gd);
+      db.schedule.forEach(s=>s.groupIds=s.groupIds.filter(x=>x!==d.gd));
+      save();render();}
+  }
+  if(d.td){
+    const t=byId(db.templates,d.td);
+    if(confirm(`刪除模板「${t.name}」？`)){
+      db.templates=db.templates.filter(x=>x.id!==d.td);save();render();}
+  }
+  if(d.ld){
+    const l=byId(db.listings,d.ld);
+    if(confirm(`刪除物件「${l.title}」？貼文紀錄會保留。`)){
+      db.listings=db.listings.filter(x=>x.id!==d.ld);save();render();}
+  }
+  if(d.qd&&confirm('刪除這筆排程？')){
+    db.schedule=db.schedule.filter(x=>x.id!==d.qd);save();render();
+  }
+  if(d.qdone){
+    const s=byId(db.schedule,d.qdone);s.doneAt=Date.now();save();render();toast('排程已完成');
+  }
+  if(d.qgo){
+    const s=byId(db.schedule,d.qgo);
+    $('#m-src').value=s.src; $('#m-listing').value=s.listingId;
+    picked=s.groupIds.filter(id=>byId(db.groups,id));
+    drafts={};posted={};openFold=null;
+    go('make');toast('已帶入排程內容');
+  }
+  if(d.deldone){
+    const l=byId(db.logs,d.deldone);
+    l.deletedAt=Date.now();l.flag='';save();render();toast('已標記為刪除');
+  }
+  if(d.delskip){
+    // 不動 expireAt / flag，只是暫時不提醒——原因本身還在
+    const l=byId(db.logs,d.delskip);
+    l.snoozeUntil=Date.now()+7*DAY;
+    save();render();toast('7 天後再提醒');
+  }
+  if(d.lead){
+    const l=byId(db.logs,d.lead);l.leads=(l.leads||0)+1;save();render();
+  }
+  if(d.fix){
+    const l=byId(db.logs,d.fix);
+    l.flag=l.flag==='需更正'?'':'需更正';save();render();
+    toast(l.flag?'已標記需更正':'已取消');
+  }
+});
+
+/* =========================================================
+   排程到期通知
+   ========================================================= */
+let notified=new Set();
+function checkDue(){
+  renderHome();
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  dueSchedules().forEach(s=>{
+    if(notified.has(s.id))return;
+    notified.add(s.id);
+    const names=s.groupIds.map(id=>byId(db.groups,id)?.name).filter(Boolean);
+    try{new Notification('社團貼文助手：排程到期',
+      {body:`${schedLabel(s)}\n${names.join('、')}`,tag:s.id});}catch(e){}
+  });
+}
+setInterval(checkDue,60000);
+
+/* =========================================================
+   啟動
+   ========================================================= */
+function render(){
+  renderHome();renderSched();renderGroups();renderTpls();
+  renderListings();renderPerf();renderLog();renderMake();
+}
+renderProfile();render();checkDue();
+</script>
+</body>
+</html>

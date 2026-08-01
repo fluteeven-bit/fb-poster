@@ -1,0 +1,7 @@
+# 自動化模組不公開（違反 FB 條款，只留在本機）
+auto/
+
+# 建置產物與備份資料
+artifact.html
+backup.json
+*.backup.json
