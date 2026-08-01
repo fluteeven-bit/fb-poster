@@ -211,6 +211,10 @@ dialog::backdrop{background:rgba(15,12,18,.55)}
 .ck{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);
   font-weight:400;padding:9px 0;cursor:pointer;margin:0}
 .ck input{width:auto;accent-color:var(--btn);margin:0}
+.auto-tag{font-size:10.5px;font-weight:600;color:var(--ok);background:var(--ok-soft);
+  border-radius:20px;padding:1px 7px;margin-left:4px;letter-spacing:.02em}
+.auto-tag:empty{display:none}
+input.auto{background:var(--ok-soft);border-color:transparent;font-weight:600}
 
 /* 貼上解析 + 照片 */
 .import-box{background:var(--bg);border:1px dashed var(--line);border-radius:9px;
@@ -480,7 +484,7 @@ const LISTING_FIELDS={
   title:'',kind:'售',status:'在售',address:'',usage:'',
   price:'',negotiable:false,
   size:'',sizeHouse:'',sizeParking:'',sizeMain:'',sizeBalcony:'',sizePublic:'',land:'',
-  layout:'',floor:'',totalFloor:'',age:'',facing:'',units:'',fee:'',parking:'',
+  layout:'',floor:'',totalFloor:'',builtDate:'',age:'',facing:'',units:'',fee:'',parking:'',
   transport:'',features:'',motive:'',note:'',photos:[],
 };
 /** v1 存檔沒有 schedule / 保留期 / 成效欄位，補齊而不是丟掉 */
@@ -589,6 +593,38 @@ function ago(ts){
   if(d===1)return '昨天貼過';
   return `${d} 天前貼過`;
 }
+
+/* ── 建築完成日期 → 屋齡 ─────────────────────────────────
+   建物謄本寫的是完成日期，屋齡會自己變老；存日期、屋齡即時算，
+   就不會有「去年寫 8 年，今年還是 8 年」的老資料。            */
+/** 接受 2024-05-20、113/5/20（民國）、民國113年5月20日，回傳 yyyy-mm-dd */
+function parseTwDate(s){
+  const t=String(s||'').trim();
+  if(!t)return '';
+  let m=t.match(/(?:民國\s*)?(\d{2,4})\s*[\/\-年.]\s*(\d{1,2})\s*[\/\-月.]\s*(\d{1,2})/);
+  if(!m)m=t.match(/(?:民國\s*)?(\d{2,4})\s*[\/\-年.]\s*(\d{1,2})\s*月?$/);
+  if(!m)return '';
+  let y=+m[1];
+  // 三位數（或含「民國」）視為民國年；民國 1 年 = 西元 1912 年
+  if(y<200||/民國/.test(t))y+=1911;
+  const mo=+(m[2]||1), d=+(m[3]||1);
+  if(y<1900||y>2200||mo<1||mo>12||d<1||d>31)return '';
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+/** 由完成日期算出屋齡文字；未滿一年給月份，否則給一位小數的年 */
+function computeAge(builtDate,now=Date.now()){
+  if(!builtDate)return '';
+  const b=new Date(builtDate+'T00:00:00');
+  if(isNaN(b))return '';
+  const months=(new Date(now).getFullYear()-b.getFullYear())*12
+    +(new Date(now).getMonth()-b.getMonth());
+  if(months<0)return '尚未完工';
+  if(months<12)return `${months} 個月`;
+  const years=months/12;
+  return `${(Math.round(years*10)/10).toString().replace(/\.0$/,'')} 年`;
+}
+/** 顯示用：有完成日期就即時算，沒有就用手動填的屋齡 */
+const listingAge=l=>l&&l.builtDate?computeAge(l.builtDate):(l?l.age||'':'');
 const lastPost=gid=>db.logs.filter(l=>l.groupId===gid&&!l.deletedAt)
   .concat(db.logs.filter(l=>l.groupId===gid&&l.deletedAt))
   .sort((a,b)=>b.at-a.at)[0]||null;
@@ -646,7 +682,8 @@ const LISTING_VARS=[
   ['案名','title'],['物件名稱','title'],['類型','kind'],['地點','address'],['地址','address'],
   ['用途','usage'],['總價','price'],['坪數','size'],['房坪','sizeHouse'],['車坪','sizeParking'],
   ['主建物','sizeMain'],['陽台','sizeBalcony'],['公設','sizePublic'],['土地','land'],
-  ['格局','layout'],['樓層','floor'],['樓高','totalFloor'],['屋齡','age'],['座向','facing'],
+  ['格局','layout'],['樓層','floor'],['樓高','totalFloor'],
+  ['建築完成日期','builtDate'],['屋齡','age'],['座向','facing'],
   ['戶數電梯','units'],['管理費','fee'],['車位','parking'],
   ['交通機能','transport'],['特色','features'],['售屋動機','motive'],['備註','note'],
 ];
@@ -663,6 +700,13 @@ function buildVars(listing){
   PROFILE_VARS.forEach(([label,k])=>v[label]=db.profile[k]||'');
   // 「誠可議」是勾選欄位，轉成可以直接寫進文案的字
   v['可議']=listing&&listing.negotiable?'（誠可議）':'';
+  // 屋齡永遠由完成日期即時換算，貼文不會用到去年存下來的舊數字
+  v['屋齡']=listingAge(listing);
+  if(listing&&listing.builtDate){
+    const [y,m]=listing.builtDate.split('-');
+    v['建築完成日期']=`${y} 年 ${+m} 月`;
+    v['建築完成日期(完整)']=listing.builtDate.replace(/-/g,'/');
+  }else{v['建築完成日期']='';v['建築完成日期(完整)']='';}
   v['今天']=fmtDate(Date.now());
   // 簽名檔本身也常寫成含變數的樣板，先把它展開一層，
   // 否則 {{簽名檔}} 代入後裡面的 {{公司全名}} 會原封不動印出來
@@ -722,7 +766,9 @@ const RULES=[
     // 沒標籤就找第一個像標題的行：夠短、不是編號、不是純數字、不含價格單位
     return t.split('\n').map(s=>s.trim().replace(/^[@#＠]\S*\s*/,''))
       .find(s=>s.length>=4&&s.length<=30&&!/^\d/.test(s)
-        &&!/元|坪$|^https?:|編號|物件代號|[【\[]/.test(s))||'';
+        &&!/元|坪$|^https?:|編號|物件代號|[【\[]/.test(s)
+        &&!/日期|執照|完工|完成|屋齡|樓高|座向|管理費/.test(s)   // 這些是欄位行不是案名
+        &&!/^.{1,10}[:：]\s*\S/.test(s))||'';                     // 「短標籤：值」也不是案名
   }},
   {k:'address',label:'地點',fn:t=>{
     let v=tagged(t,['地點','地址','位置','座落']);
@@ -796,7 +842,15 @@ const RULES=[
     const m=t.match(/(\d+)\s*[\/／]\s*(\d+)\s*(?:樓|F)/i);
     return m?m[2]+'F':'';
   }},
+  {k:'builtDate',label:'建築完成日期',fn:t=>{
+    const v=tagged(t,['建築完成日期','建築完成','完工日期','完成日期','建成日期',
+                      '使用執照日期','使照日期','建照日期','完工時間']);
+    if(v){const d=parseTwDate(v);if(d)return d;}
+    const m=t.match(/(?:建築完成|完工|使用執照)[^\n]{0,8}?((?:民國\s*)?\d{2,4}\s*[\/\-年.]\s*\d{1,2}(?:\s*[\/\-月.]\s*\d{1,2})?)/);
+    return m?parseTwDate(m[1]):'';
+  }},
   {k:'age',label:'屋齡',fn:t=>{
+    // 只有在沒有完成日期時才用得到；有日期的話下面會蓋掉
     const v=tagged(t,['屋齡']);
     const m=(v||'').match(/([\d.]+)/)||t.match(/屋齡\s*[:：]?\s*([\d.]+)\s*年/);
     return m?m[1]+' 年':'';
@@ -864,6 +918,11 @@ function parseListing(text){
     try{v=fn(t)||'';}catch(e){v='';}
     if(v){out[k]=v;found.push({label,value:v});}
   });
+  // 有完成日期就以它為準，手動屋齡只是沒日期時的備案
+  if(out.builtDate){
+    const a=computeAge(out.builtDate);
+    if(a){out.age=a;found.push({label:'屋齡（換算）',value:a});}
+  }
   // 標題、售屋動機常含賣點關鍵字，別讓它們在賣點裡再出現一次
   const drop=new Set([out.title,out.motive].filter(Boolean));
   const f=parseFeatures(t).split('\n').filter(s=>s&&!drop.has(s)).join('\n');
@@ -1100,8 +1159,17 @@ function editListing(l){
      <div class="grid g4">
        <div>${F('樓層','f-floor',l.floor,'text','11F')}</div>
        <div>${F('樓高','f-totalFloor',l.totalFloor,'text','15F')}</div>
-       <div>${F('屋齡','f-age',l.age,'text','1.5 年')}</div>
+       <div>${F('建築完成日期','f-builtDate',l.builtDate,'date')}</div>
+       <div class="field">
+         <label for="f-age">屋齡 <span class="auto-tag" id="f-age-auto"></span></label>
+         <input id="f-age" value="${esc(l.age)}" placeholder="1.5 年">
+       </div>
+     </div>
+     <div class="grid g2">
        <div>${F('座向','f-facing',l.facing,'text','座東朝西')}</div>
+       <div class="field"><label>&nbsp;</label>
+         <div class="hint" style="padding-top:8px">填了完成日期，屋齡就自動換算，貼文永遠是最新的。民國年可以貼在上面的解析框。</div>
+       </div>
      </div>
      <div class="grid g2">
        <div>${F('戶數 / 電梯','f-units',l.units,'text','一層六戶，兩部電梯')}</div>
@@ -1138,7 +1206,8 @@ function editListing(l){
         size:val('#f-size'),sizeHouse:val('#f-sizeHouse'),sizeParking:val('#f-sizeParking'),
         sizeMain:val('#f-sizeMain'),sizeBalcony:val('#f-sizeBalcony'),
         sizePublic:val('#f-sizePublic'),land:val('#f-land'),
-        floor:val('#f-floor'),totalFloor:val('#f-totalFloor'),age:val('#f-age'),
+        floor:val('#f-floor'),totalFloor:val('#f-totalFloor'),
+        builtDate:val('#f-builtDate'),age:val('#f-age'),
         facing:val('#f-facing'),units:val('#f-units'),fee:val('#f-fee'),
         parking:val('#f-parking'),
         features:val('#f-features'),transport:val('#f-transport'),motive:val('#f-motive'),
@@ -1157,6 +1226,23 @@ let draftPhotos=[];
 function wireListingDialog(l){
   draftPhotos=[...(l.photos||[])];
   drawThumbs();
+
+  // ── 建築完成日期 → 屋齡自動換算 ──
+  const syncAge=()=>{
+    const d=$('#f-builtDate').value;
+    const tag=$('#f-age-auto'), age=$('#f-age');
+    if(d){
+      const a=computeAge(d);
+      age.value=a; age.readOnly=true; age.classList.add('auto');
+      tag.textContent='自動換算';
+    }else{
+      age.readOnly=false; age.classList.remove('auto');
+      tag.textContent='';
+    }
+  };
+  $('#f-builtDate').addEventListener('change',syncAge);
+  $('#f-builtDate').addEventListener('input',syncAge);
+  syncAge();
 
   // ── 貼上解析 ──
   $('#f-parse').addEventListener('click',()=>{
@@ -1183,6 +1269,7 @@ function wireListingDialog(l){
       if(el.value.trim()){skipped++;return;}
       el.value=v;filled++;
     });
+    syncAge();   // 解析可能填了完成日期，屋齡要跟著鎖定並重算
     $('#f-parse-out').innerHTML=
       `<b style="color:var(--ok)">填了 ${filled} 個欄位${skipped?`，${skipped} 個原本有值沒動`:''}。</b><br>`+
       found.map(f=>`${esc(f.label)}：<b>${esc(f.value)}</b>`).join('　·　')+
@@ -1253,6 +1340,7 @@ function renderListings(){
           <span class="tag ${stTag}">${esc(l.status)}</span> ${esc(l.title)}</div>
         <div class="m">${[l.address,l.layout,l.size,
             l.floor&&l.totalFloor?`${l.floor}/${l.totalFloor}`:l.floor,
+            listingAge(l)&&'屋齡 '+listingAge(l),
             l.price&&l.price+(l.negotiable?'（可議）':''),l.parking&&'含車位']
             .filter(Boolean).map(esc).join(' · ')}${l.photos?.length?` · 📷 ${l.photos.length} 張`:''}${posts?` · 在 ${posts} 個社團有貼文`:''}</div>
       </div>
@@ -1573,7 +1661,8 @@ function buildAIPrompt(){
     ['總價',l.price+(l.negotiable?'（誠可議）':'')],
     ['坪數',l.size],['房坪',l.sizeHouse],['車坪',l.sizeParking],
     ['主建物',l.sizeMain],['陽台',l.sizeBalcony],['公設',l.sizePublic],['土地',l.land],
-    ['格局',l.layout],['樓層',l.floor],['樓高',l.totalFloor],['屋齡',l.age],
+    ['格局',l.layout],['樓層',l.floor],['樓高',l.totalFloor],
+    ['建築完成日期',l.builtDate],['屋齡',listingAge(l)],
     ['座向',l.facing],['戶數/電梯',l.units],['管理費',l.fee],['車位',l.parking],
     ['特色',l.features],['交通與生活機能',l.transport],['售屋動機',l.motive],
   ].filter(([,v])=>v&&String(v).trim())
@@ -1653,7 +1742,7 @@ function openMarketDialog(){
   const desc=[
     l.address&&`📍 ${l.address}`,
     [l.layout,l.size,l.floor].filter(Boolean).join('｜'),
-    l.age&&`屋齡 ${l.age}`,
+    listingAge(l)&&`屋齡 ${listingAge(l)}`,
     '',l.features,'',
     [p.name,p.shop].filter(Boolean).join('｜'),
     p.phone&&`☎️ ${p.phone}`,
@@ -1836,6 +1925,7 @@ const SEED=[
 【土地】：{{土地}}
 【樓層】：{{樓層}}
 【樓高】：{{樓高}}
+【建築完成】：{{建築完成日期}}
 【屋齡】：{{屋齡}}
 【座向】：{{座向}}
 【格局】：{{格局}}
