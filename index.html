@@ -487,17 +487,24 @@ const LISTING_FIELDS={
   layout:'',floor:'',totalFloor:'',builtDate:'',age:'',facing:'',units:'',fee:'',parking:'',
   transport:'',features:'',motive:'',note:'',photos:[],
 };
-/** v1 存檔沒有 schedule / 保留期 / 成效欄位，補齊而不是丟掉 */
+/** 舊存檔沒有 schedule／保留期／成效／新物件欄位，補齊而不是丟掉。
+ *  手改壞的備份也要能救回其他部分，所以每個欄位都先確認型別。 */
 function migrate(d){
-  const x=Object.assign(structuredClone(blank),d||{});
-  x.groups   =(x.groups||[]).map(g=>({ruleDelDays:0,...g}));
-  x.templates=(x.templates||[]);
-  x.listings =(x.listings||[]).map(l=>({...structuredClone(LISTING_FIELDS),...l}));
-  x.logs     =(x.logs||[]).map(l=>({tplId:'',listingId:'',expireAt:null,
-                                    deletedAt:null,snoozeUntil:null,flag:'',leads:0,...l}));
-  x.schedule =(x.schedule||[]);
-  x.profile  =Object.assign(structuredClone(blank.profile),x.profile||{});
-  x.settings =Object.assign(structuredClone(blank.settings),x.settings||{});
+  const arr=v=>Array.isArray(v)?v.filter(x=>x&&typeof x==='object'):[];
+  const obj=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  const src=obj(d);
+  const x=Object.assign(structuredClone(blank),src);
+  x.groups   =arr(src.groups).map(g=>({ruleDelDays:0,...g}));
+  x.templates=arr(src.templates);
+  x.listings =arr(src.listings).map(l=>({...structuredClone(LISTING_FIELDS),...l,
+                photos:Array.isArray(l.photos)?l.photos:[]}));
+  x.logs     =arr(src.logs).map(l=>({tplId:'',listingId:'',expireAt:null,
+                deletedAt:null,snoozeUntil:null,flag:'',leads:0,...l}));
+  x.schedule =arr(src.schedule).map(s=>({...s,
+                groupIds:Array.isArray(s.groupIds)?s.groupIds:[]}));
+  x.profile  =Object.assign(structuredClone(blank.profile),obj(src.profile));
+  x.settings =Object.assign(structuredClone(blank.settings),obj(src.settings));
+  x.settings.keepDays=Math.max(0,+x.settings.keepDays||0);
   return x;
 }
 let db=load();
