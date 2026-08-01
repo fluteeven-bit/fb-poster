@@ -204,6 +204,37 @@ dialog::backdrop{background:rgba(15,12,18,.55)}
 .fold:hover{color:var(--brand)}
 .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;min-width:60px}
 .bar i{display:block;height:100%;background:var(--brand);border-radius:3px}
+
+/* 貼上解析 + 照片 */
+.import-box{background:var(--bg);border:1px dashed var(--line);border-radius:9px;
+  padding:12px;margin-bottom:16px}
+.drop{border:1.5px dashed var(--line);border-radius:9px;padding:16px 12px;
+  text-align:center;font-size:12.5px;color:var(--ink3);background:var(--bg)}
+.drop.over{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
+.drop:focus-visible{border-color:var(--brand)}
+kbd{background:var(--card);border:1px solid var(--line);border-bottom-width:2px;
+  border-radius:4px;padding:1px 5px;font-size:11px;font-family:inherit}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));
+  gap:7px;margin-top:9px}
+.thumbs:empty{margin-top:0}
+.thumb{position:relative;aspect-ratio:4/3;border-radius:7px;overflow:hidden;
+  border:1px solid var(--line);background:var(--bg)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb button{position:absolute;top:3px;right:3px;width:22px;height:22px;
+  border:0;border-radius:50%;background:rgba(20,15,20,.72);color:#fff;
+  cursor:pointer;font-size:15px;line-height:1;padding:0}
+.thumb button:hover{background:var(--btn)}
+
+/* AI 提示詞 / 市集欄位 */
+.field-row{display:flex;gap:8px;align-items:flex-start;padding:9px 0;
+  border-bottom:1px solid var(--line)}
+.field-row:last-child{border-bottom:0}
+.field-row .fl{flex:0 0 78px;font-size:12px;color:var(--ink3);padding-top:7px}
+.field-row .fv{flex:1;min-width:0;white-space:pre-wrap;font-size:13.5px;
+  background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px}
+#ai-prompt{white-space:pre-wrap;font-size:12.5px;line-height:1.7;background:var(--bg);
+  border:1px solid var(--line);border-radius:8px;padding:12px;max-height:300px;
+  overflow:auto;font-family:ui-monospace,"Cascadia Code",Consolas,monospace}
 </style>
 </head>
 <body>
@@ -263,9 +294,13 @@ dialog::backdrop{background:rgba(15,12,18,.55)}
             <label for="m-src">模板</label>
             <select id="m-src"></select>
           </div>
-          <div class="field" style="margin-bottom:0">
+          <div class="field">
             <label for="m-listing">帶入物件</label>
             <select id="m-listing"></select>
+          </div>
+          <div class="row">
+            <button class="btn g sm" id="m-ai">✨ 用 AI 寫文案</button>
+            <button class="btn g sm" id="m-market">FB 市集欄位</button>
           </div>
         </div>
         <div class="card">
@@ -324,7 +359,7 @@ dialog::backdrop{background:rgba(15,12,18,.55)}
   <section class="view" id="v-listings">
     <div class="row"><h2>物件資料</h2><div class="sp"></div>
       <button class="btn" id="l-add">新增物件</button></div>
-    <p class="sub">建一次資料，所有模板共用。物件改成「已成交」時，它在各社團的貼文會自動排進待刪清單，避免客人問到已售物件。</p>
+    <p class="sub">建一次資料，所有模板共用。新增物件時可以<b>直接貼上 591 或公司後台的頁面內容</b>，格局、坪數、價格、地址會自動填好。物件改成「已成交」時，它在各社團的貼文會自動排進待刪清單，避免客人問到已售物件。</p>
     <div class="card"><div id="l-list"></div></div>
   </section>
 
@@ -432,7 +467,7 @@ function migrate(d){
   const x=Object.assign(structuredClone(blank),d||{});
   x.groups   =(x.groups||[]).map(g=>({ruleDelDays:0,...g}));
   x.templates=(x.templates||[]);
-  x.listings =(x.listings||[]).map(l=>({status:'在售',...l}));
+  x.listings =(x.listings||[]).map(l=>({status:'在售',photos:[],...l}));
   x.logs     =(x.logs||[]).map(l=>({tplId:'',listingId:'',expireAt:null,
                                     deletedAt:null,snoozeUntil:null,flag:'',leads:0,...l}));
   x.schedule =(x.schedule||[]);
@@ -450,6 +485,61 @@ function save(){
   catch(e){toast('儲存失敗，瀏覽器空間可能已滿');}
 }
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+/* =========================================================
+   照片儲存（IndexedDB）
+   localStorage 只有 5MB，放照片會直接爆掉，所以照片獨立存。
+   ========================================================= */
+const IDB={db:null,
+  open(){
+    if(this.db)return Promise.resolve(this.db);
+    return new Promise((res,rej)=>{
+      const r=indexedDB.open('fb-poster-photos',1);
+      r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('photos'))
+        r.result.createObjectStore('photos');};
+      r.onsuccess=()=>{this.db=r.result;res(this.db);};
+      r.onerror=()=>rej(r.error);
+    });
+  },
+  async tx(mode){return (await this.open()).transaction('photos',mode).objectStore('photos');},
+  async put(id,dataUrl){const s=await this.tx('readwrite');
+    return new Promise((res,rej)=>{const q=s.put(dataUrl,id);q.onsuccess=()=>res(id);q.onerror=()=>rej(q.error);});},
+  async get(id){const s=await this.tx('readonly');
+    return new Promise(res=>{const q=s.get(id);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});},
+  async del(id){const s=await this.tx('readwrite');
+    return new Promise(res=>{const q=s.delete(id);q.onsuccess=res;q.onerror=res;});},
+  async clear(){const s=await this.tx('readwrite');
+    return new Promise(res=>{const q=s.clear();q.onsuccess=res;q.onerror=res;});},
+};
+/** 刪掉沒有任何物件在用的照片，避免 IndexedDB 一直長大 */
+async function purgeOrphanPhotos(){
+  const used=new Set(db.listings.flatMap(l=>l.photos||[]));
+  try{
+    const s=await IDB.tx('readonly');
+    const all=await new Promise(res=>{const q=s.getAllKeys();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([]);});
+    for(const k of all)if(!used.has(k))await IDB.del(k);
+  }catch(e){}
+}
+/** 壓到長邊 1600px、JPEG 0.82 —— 手機拍的原圖動輒 5MB，不壓縮存不了幾張 */
+function compressImage(file,max=1600,quality=.82){
+  return new Promise((res,rej)=>{
+    const fr=new FileReader();
+    fr.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        let{width:w,height:h}=img;
+        if(Math.max(w,h)>max){const k=max/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        res(c.toDataURL('image/jpeg',quality));
+      };
+      img.onerror=()=>rej(new Error('圖片讀取失敗'));
+      img.src=fr.result;
+    };
+    fr.onerror=()=>rej(new Error('檔案讀取失敗'));
+    fr.readAsDataURL(file);
+  });
+}
 
 /* =========================================================
    小工具
@@ -567,18 +657,120 @@ function fill(body,listing){
 }
 
 /* =========================================================
+   物件資料解析 —— 從 591／中信頁面複製的文字抓出欄位
+   瀏覽器的跨域限制讓純前端無法直接抓網頁，所以走「貼上內容」。
+   每條規則都回傳「抓到什麼」，讓使用者過目再套用。
+   ========================================================= */
+const CITIES='台北市|臺北市|新北市|桃園市|台中市|臺中市|台南市|臺南市|高雄市|基隆市|新竹市|新竹縣|苗栗縣|彰化縣|南投縣|雲林縣|嘉義市|嘉義縣|屏東縣|宜蘭縣|花蓮縣|台東縣|臺東縣|澎湖縣|金門縣|連江縣';
+const num=s=>String(s||'').replace(/,/g,'');
+
+const RULES=[
+  {k:'kind',label:'類型',fn:t=>/租金|月租|出租/.test(t)&&!/售價|總價/.test(t)?'租':'售'},
+  {k:'price',label:'總價 / 租金',fn:t=>{
+    let m=t.match(/(?:總價|售價|開價|價格)\s*[:：]?\s*([\d,]+(?:\.\d+)?)\s*萬/);
+    if(m)return m[1]+' 萬';
+    m=t.match(/(?:租金|月租)\s*[:：]?\s*([\d,]+)\s*元?/);
+    if(m)return num(m[1])+' 元/月';
+    m=t.match(/([\d,]+(?:\.\d+)?)\s*萬(?!坪)/);          // 落單的「1,280萬」
+    return m?m[1]+' 萬':'';
+  }},
+  {k:'layout',label:'格局',fn:t=>{
+    // 屋主口述常寫「三房兩廳」，不是只有阿拉伯數字
+    const CN={一:1,二:2,兩:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10};
+    const D='[一二三四五六七八九十兩\\d]+';
+    const n=s=>/^\d+$/.test(s)?s:(CN[s]!==undefined?String(CN[s]):s);
+    let m=t.match(new RegExp(`(${D})\\s*房\\s*(${D})\\s*廳\\s*(${D})\\s*衛`));
+    if(m)return `${n(m[1])}房${n(m[2])}廳${n(m[3])}衛`;
+    m=t.match(new RegExp(`(${D})\\s*房\\s*(${D})\\s*廳`));
+    if(m)return `${n(m[1])}房${n(m[2])}廳`;
+    m=t.match(new RegExp(`(${D})\\s*房(?!\\s*客)`));
+    return m?n(m[1])+'房':'';
+  }},
+  {k:'size',label:'坪數',fn:t=>{
+    // 建坪優先；沒標示就取第一個坪數，但跳過土地/公設等衍生數字
+    let m=t.match(/(?:建物|建坪|權狀|主建物)\s*[^\d]{0,6}([\d.]+)\s*坪/);
+    if(m)return m[1]+' 坪';
+    m=t.match(/([\d.]+)\s*坪/);
+    return m?m[1]+' 坪':'';
+  }},
+  {k:'floor',label:'樓層',fn:t=>{
+    let m=t.match(/(\d+)\s*[\/／]\s*(\d+)\s*(?:樓|F)/i);
+    if(m)return `${m[1]}/${m[2]}F`;
+    m=t.match(/樓層\s*[:：]?\s*([\d\-~]+)\s*(?:樓|F)/i);
+    return m?m[1]+'F':'';
+  }},
+  {k:'age',label:'屋齡',fn:t=>{
+    const m=t.match(/屋齡\s*[:：]?\s*([\d.]+)\s*年/);
+    return m?m[1]+' 年':'';
+  }},
+  {k:'address',label:'地址 / 位置',fn:t=>{
+    // 縣市、區、路名各自成段，否則「台中市」會把「西屯區」吃掉
+    const road='[\\u4e00-\\u9fa5A-Za-z\\d]{1,14}(?:路|街|大道)(?:[一二三四五六七八九十\\d]+段)?';
+    const re=new RegExp(`(?:(${CITIES})\\s*)?([\\u4e00-\\u9fa5]{1,3}[區鄉鎮])\\s*(${road})?`);
+    const m=t.match(re);
+    if(m&&(m[1]||m[2]))return [m[1],m[2],m[3]].filter(Boolean).join('').replace(/\s+/g,'');
+    const only=t.match(new RegExp(`(${CITIES})\\s*(${road})?`));
+    return only?[only[1],only[2]].filter(Boolean).join('').replace(/\s+/g,''):'';
+  }},
+  {k:'title',label:'物件名稱',fn:t=>{
+    // 第一個像標題的行：夠短、不是編號、不是純數字、不含價格單位
+    const line=t.split('\n').map(s=>s.trim())
+      .find(s=>s.length>=4&&s.length<=30&&!/^\d/.test(s)
+        &&!/元|坪$|^https?:|編號|物件代號/.test(s));
+    return line||'';
+  }},
+];
+/** 抓賣點：條列句或含賣點關鍵字的短句。
+ *  排除已被其他規則吃掉的資料行，否則會把地址、樓層當成賣點。 */
+const FEATURE_WORDS=/(採光|捷運|學區|公園|車位|裝潢|棟距|收納|電梯|中庭|安靜|邊間|樓中樓|庭院|露台|翻新|屋況|生活機能|市場|全新|方正|無暗房|近\S|機能|管理|警衛|保全|景觀|通風|挑高)/;
+const DATA_LINE=/(總價|售價|開價|價格|租金|月租|坪|樓|F\b|屋齡|房\s*\d*\s*廳|編號|物件代號|地址|格局|^\s*https?:)/;
+function parseFeatures(t){
+  const picks=t.split('\n')
+    .map(s=>s.trim().replace(/^[•·▪◆▪️✔✅★\-*\s]+/,'').trim())
+    .filter(s=>s.length>=5&&s.length<=40
+      &&!DATA_LINE.test(s)              // 不是資料行
+      &&!/^[\d,.\s]+$/.test(s)          // 不是純數字
+      &&FEATURE_WORDS.test(s));         // 真的講到賣點
+  return [...new Set(picks)].slice(0,4).join('\n');
+}
+function parseListing(text){
+  const t=String(text||'').replace(/\r/g,'');
+  const out={},found=[];
+  RULES.forEach(({k,label,fn})=>{
+    let v='';
+    try{v=fn(t)||'';}catch(e){v='';}
+    if(v){out[k]=v;found.push({label,value:v});}
+  });
+  // 標題常常也含賣點關鍵字，別讓它在賣點裡再出現一次
+  const f=parseFeatures(t).split('\n').filter(s=>s!==out.title).join('\n');
+  if(f){out.features=f;found.push({label:'賣點特色',value:f.replace(/\n/g,'、')});}
+  return{fields:out,found};
+}
+
+/* =========================================================
    對話框
    ========================================================= */
 let dlgOk=null;
-function openDlg(title,html,onOk){
+/** 對話框關閉時要拆掉的東西（例如掛在 document 上的 paste 監聽）。
+ *  不靠 close 事件 —— 有些環境不會觸發，監聽器就會一路累積。 */
+let dlgCleanup=[];
+function runCleanup(){
+  dlgCleanup.forEach(fn=>{try{fn();}catch(e){}});
+  dlgCleanup=[];
+}
+/** opts.readOnly：只是顯示東西給使用者看，沒有要儲存 —— 藏起「儲存」鈕。 */
+function openDlg(title,html,onOk,opts={}){
+  runCleanup();
   $('#dlg-h').textContent=title;
   $('#dlg-b').innerHTML=html;
+  $('#dlg-ok').style.display=opts.readOnly?'none':'';
+  $('#dlg-cancel').textContent=opts.readOnly?'關閉':'取消';
   dlgOk=onOk;
   $('#dlg').showModal();
   const first=$('#dlg-b input,#dlg-b textarea,#dlg-b select');
   if(first)first.focus();
 }
-function closeDlg(){dlgOk=null;$('#dlg').close();}
+function closeDlg(){runCleanup();dlgOk=null;$('#dlg').close();}
 $('#dlg-cancel').addEventListener('click',closeDlg);
 $('#dlg-ok').addEventListener('click',()=>{
   // onOk 回傳 false 代表驗證沒過，維持開啟不要把使用者輸入弄丟
@@ -586,13 +778,24 @@ $('#dlg-ok').addEventListener('click',()=>{
   closeDlg();
 });
 $('#dlg').addEventListener('cancel',()=>{dlgOk=null;});   // Esc
-// 模板編輯器：點變數／CTA 插入游標處（只註冊一次，避免重複插入）
-$('#dlg-b').addEventListener('click',e=>{
-  const c=e.target.closest('code[data-ins]');if(!c)return;
-  const ta=$('#f-body');if(!ta)return;
-  const s=ta.selectionStart,v=c.dataset.ins;
-  ta.value=ta.value.slice(0,s)+v+ta.value.slice(ta.selectionEnd);
-  ta.focus();ta.selectionStart=ta.selectionEnd=s+v.length;
+// 對話框內的委派事件（只註冊一次，避免每次開啟都疊一層）
+let marketRows=[];
+$('#dlg-b').addEventListener('click',async e=>{
+  // 模板編輯器：點變數／CTA 插入游標處
+  const c=e.target.closest('code[data-ins]');
+  if(c){
+    const ta=$('#f-body');if(!ta)return;
+    const s=ta.selectionStart,v=c.dataset.ins;
+    ta.value=ta.value.slice(0,s)+v+ta.value.slice(ta.selectionEnd);
+    ta.focus();ta.selectionStart=ta.selectionEnd=s+v.length;
+    return;
+  }
+  // FB 市集：逐欄複製
+  const m=e.target.closest('button[data-mcopy]');
+  if(m){
+    const row=marketRows[+m.dataset.mcopy];
+    if(row)toast(await copyText(row[1])?'已複製':'複製失敗');
+  }
 });
 const F=(label,id,val='',type='text',ph='')=>
   `<div class="field"><label for="${id}">${label}</label>
@@ -721,9 +924,22 @@ const STATUSES=['在售','已成交','已下架'];
 function editListing(l){
   const isNew=!l;
   l=l||{id:uid(),title:'',kind:'售',status:'在售',address:'',layout:'',size:'',
-        price:'',floor:'',age:'',features:'',note:''};
+        price:'',floor:'',age:'',features:'',note:'',photos:[]};
+  l.photos=l.photos||[];
   const wasStatus=l.status;
   openDlg(isNew?'新增物件':'編輯物件',
+    `<div class="import-box">
+       <div class="row" style="margin-bottom:8px">
+         <b style="font-size:13px">從 591 / 中信頁面貼上，自動填欄位</b>
+         <div class="sp"></div>
+         <button type="button" class="btn g sm" id="f-parse">解析並填入</button>
+       </div>
+       <textarea id="f-paste" style="min-height:70px"
+         placeholder="在物件頁按 Ctrl+A 全選、Ctrl+C 複製，貼在這裡"></textarea>
+       <div class="hint" id="f-parse-out" style="margin-top:6px">
+         抓得到：格局、坪數、總價、樓層、屋齡、地址、賣點。填錯的欄位下面可以直接改。
+       </div>
+     </div>`+
     F('物件名稱 *','f-title',l.title,'text','例：幸福路 三房電梯')+
     `<div class="grid g3">
       <div>${SEL('類型','f-kind',['售','租'],l.kind)}</div>
@@ -738,7 +954,20 @@ function editListing(l){
     </div>`+
     F('屋齡','f-age',l.age,'text','8 年')+
     TA('賣點特色','f-features',l.features,80)+
-    TA('內部備註（不會出現在文案，除非你用 {{備註}}）','f-note',l.note,60),
+    TA('內部備註（不會出現在文案，除非你用 {{備註}}）','f-note',l.note,60)+
+    `<div class="field">
+       <label>照片</label>
+       <div class="drop" id="f-drop" tabindex="0">
+         拖曳照片到這裡，或按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上，也可以
+         <button type="button" class="btn g sm" id="f-pick">選檔案</button>
+         <input type="file" id="f-file" accept="image/*" multiple style="display:none">
+       </div>
+       <div class="thumbs" id="f-thumbs"></div>
+       <div class="hint" style="margin-top:5px">
+         照片存在你的瀏覽器裡，會自動壓縮。FB 貼文時還是要自己上傳——
+         這裡是讓你把物件的照片集中管好，不用每次翻相簿。
+       </div>
+     </div>`,
     ()=>{
       const title=$('#f-title').value.trim();
       if(!title){toast('物件名稱必填');return false;}
@@ -746,13 +975,106 @@ function editListing(l){
         price:$('#f-price').value.trim(),address:$('#f-address').value.trim(),
         layout:$('#f-layout').value.trim(),size:$('#f-size').value.trim(),
         floor:$('#f-floor').value.trim(),age:$('#f-age').value.trim(),
-        features:$('#f-features').value.trim(),note:$('#f-note').value.trim()});
+        features:$('#f-features').value.trim(),note:$('#f-note').value.trim(),
+        photos:[...draftPhotos]});
       if(isNew)db.listings.push(l);
       save();render();
       const n=l.status==='已成交'&&wasStatus!=='已成交'
         ? db.logs.filter(x=>x.listingId===l.id&&!x.deletedAt).length : 0;
       toast(n?`已成交，${n} 則舊貼文已排進待刪清單`:(isNew?'已新增物件':'已更新'));
     });
+  wireListingDialog(l);
+}
+
+/* 物件對話框內的互動：貼上解析 + 照片 */
+let draftPhotos=[];
+function wireListingDialog(l){
+  draftPhotos=[...(l.photos||[])];
+  drawThumbs();
+
+  // ── 貼上解析 ──
+  $('#f-parse').addEventListener('click',()=>{
+    const raw=$('#f-paste').value;
+    if(!raw.trim()){toast('先把物件頁的內容貼進來');return;}
+    if(/^\s*https?:\/\/\S+\s*$/.test(raw)){
+      $('#f-parse-out').innerHTML='<b style="color:var(--crit)">這是網址，不是內容。</b>'+
+        '瀏覽器不允許網頁去抓別的網站，請打開那個頁面按 Ctrl+A 全選、Ctrl+C 複製，再貼過來。';
+      return;
+    }
+    const{fields,found}=parseListing(raw);
+    if(!found.length){
+      $('#f-parse-out').innerHTML='<b style="color:var(--crit)">沒抓到可辨識的欄位。</b>'+
+        '可能是複製到的內容太少，或格式特殊——手動填下面的欄位就好。';
+      return;
+    }
+    // 只填空欄位，不覆蓋使用者已經打好的字
+    const map={title:'#f-title',address:'#f-address',layout:'#f-layout',size:'#f-size',
+      floor:'#f-floor',age:'#f-age',price:'#f-price',features:'#f-features'};
+    let filled=0,skipped=0;
+    Object.entries(fields).forEach(([k,v])=>{
+      if(k==='kind'){$('#f-kind').value=v;return;}
+      const el=map[k]&&$(map[k]);
+      if(!el)return;
+      if(el.value.trim()){skipped++;return;}
+      el.value=v;filled++;
+    });
+    $('#f-parse-out').innerHTML=
+      `<b style="color:var(--ok)">填了 ${filled} 個欄位${skipped?`，${skipped} 個原本有值沒動`:''}。</b><br>`+
+      found.map(f=>`${esc(f.label)}：<b>${esc(f.value)}</b>`).join('　·　')+
+      '<br>對照一下有沒有抓錯，錯的直接改。';
+  });
+
+  // ── 照片：選檔 / 拖曳 / 貼上 ──
+  const drop=$('#f-drop');
+  $('#f-pick').addEventListener('click',()=>$('#f-file').click());
+  $('#f-file').addEventListener('change',e=>{addPhotos(e.target.files);e.target.value='';});
+  drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
+  drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
+  drop.addEventListener('drop',e=>{
+    e.preventDefault();drop.classList.remove('over');
+    addPhotos(e.dataTransfer.files);
+  });
+  // 貼上只在對話框開著時生效，關閉時解除
+  const onPaste=e=>{
+    const files=[...(e.clipboardData?.items||[])]
+      .filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);
+    if(files.length){e.preventDefault();addPhotos(files);}
+  };
+  document.addEventListener('paste',onPaste);
+  dlgCleanup.push(()=>document.removeEventListener('paste',onPaste));
+
+  $('#f-thumbs').addEventListener('click',async e=>{
+    const b=e.target.closest('button[data-rmphoto]');if(!b)return;
+    const id=b.dataset.rmphoto;
+    draftPhotos=draftPhotos.filter(x=>x!==id);
+    await IDB.del(id);
+    drawThumbs();
+  });
+}
+async function addPhotos(fileList){
+  const files=[...(fileList||[])].filter(f=>f.type.startsWith('image/'));
+  if(!files.length)return;
+  if(draftPhotos.length+files.length>12){toast('一個物件最多 12 張照片');return;}
+  toast(`處理 ${files.length} 張照片…`);
+  for(const f of files){
+    try{
+      const dataUrl=await compressImage(f);
+      const id=uid();
+      await IDB.put(id,dataUrl);
+      draftPhotos.push(id);
+    }catch(err){toast('有張照片存不進去：'+err.message);}
+  }
+  drawThumbs();
+  toast(`已加入 ${files.length} 張`);
+}
+async function drawThumbs(){
+  const el=$('#f-thumbs');if(!el)return;
+  if(!draftPhotos.length){el.innerHTML='';return;}
+  const urls=await Promise.all(draftPhotos.map(id=>IDB.get(id)));
+  el.innerHTML=draftPhotos.map((id,i)=>urls[i]
+    ? `<div class="thumb"><img src="${urls[i]}" alt="">
+         <button type="button" data-rmphoto="${id}" title="移除">×</button></div>`
+    : '').join('');
 }
 function renderListings(){
   const el=$('#l-list');
@@ -764,7 +1086,7 @@ function renderListings(){
       <div style="min-width:0;flex:1">
         <div class="t"><span class="tag br">${esc(l.kind)}</span>
           <span class="tag ${stTag}">${esc(l.status)}</span> ${esc(l.title)}</div>
-        <div class="m">${[l.address,l.layout,l.size,l.floor,l.price].filter(Boolean).map(esc).join(' · ')}${posts?` · 在 ${posts} 個社團有貼文`:''}</div>
+        <div class="m">${[l.address,l.layout,l.size,l.floor,l.price].filter(Boolean).map(esc).join(' · ')}${l.photos?.length?` · 📷 ${l.photos.length} 張`:''}${posts?` · 在 ${posts} 個社團有貼文`:''}</div>
       </div>
       <button class="btn g sm" data-le="${l.id}">編輯</button>
       <button class="btn g sm" data-ld="${l.id}">刪除</button>
@@ -1059,6 +1381,138 @@ $('#send-list').addEventListener('input',e=>{
 });
 
 /* =========================================================
+   AI 文案：組提示詞 → 複製 → 貼到 Claude / ChatGPT
+   不在網站裡直接呼叫 API：這是公開網頁，內建金鑰等於送給所有人；
+   而且丟到 Claude 對談還能來回修，文案品質比一次生成好。
+   ========================================================= */
+const AI_STYLES=[
+  ['專業穩重','像資深房仲，重數據與條理，讓人覺得可靠'],
+  ['親切鄰居','像在地鄰居聊天，口語、不推銷感'],
+  ['簡潔有力','短句為主，重點條列，適合滑手機快速看完'],
+  ['故事感','從生活場景切入，讓買方想像住進去的樣子'],
+];
+function buildAIPrompt(){
+  const l=byId(db.listings,$('#m-listing').value);
+  const p=db.profile;
+  const cat=$('#m-src').value.startsWith('c:')?$('#m-src').value.slice(2)
+    :(byId(db.templates,$('#m-src').value.slice(2))?.cat||'物件銷售');
+  const gs=picked.map(id=>byId(db.groups,id)).filter(Boolean);
+  const areas=[...new Set(gs.map(g=>g.area).filter(Boolean))];
+  const n=Math.max(picked.length,3);
+
+  const info=l?[
+    ['物件名稱',l.title],['類型',l.kind],['地址',l.address],['格局',l.layout],
+    ['坪數',l.size],['樓層',l.floor],['屋齡',l.age],['價格',l.price],['賣點',l.features],
+  ].filter(([,v])=>v).map(([k,v])=>`- ${k}：${v}`).join('\n') : '（這次不帶物件，寫通用內容）';
+
+  return `你是台灣資深房仲的文案助手。請幫我寫 ${n} 個版本的 Facebook 社團貼文。
+
+## 我的身分
+${[p.name&&`- 姓名：${p.name}`,p.title&&`- 職稱：${p.title}`,p.shop&&`- 服務店家：${p.shop}`,
+   p.phone&&`- 電話：${p.phone}`,p.line&&`- LINE：${p.line}`].filter(Boolean).join('\n')||'（未填，結尾先留空）'}
+
+## 貼文類型
+${cat}
+
+## 物件資料
+${info}
+
+## 要貼的社團
+${gs.length?gs.map(g=>`- ${g.name}${g.area?`（${g.area}）`:''}`).join('\n'):'（尚未選擇）'}
+${areas.length?`\n主要經營區域：${areas.join('、')}`:''}
+
+## 要求
+1. **每個版本的措辭、開場、結構都要明顯不同。** 這些貼文會同時發到不同社團，
+   內容雷同會被 Facebook 判定灌水、被版主踢出社團。這是最重要的一點。
+2. 長度 150–300 字，適合手機閱讀，適當換行，不要一整塊。
+3. 用台灣在地口語，不要中國用語（例如寫「坪」不寫「平米」、「房仲」不寫「中介」）。
+4. 資料只能用上面提供的，**不要自己編造**坪數、價格、屋齡、周邊設施或建案名稱。
+5. 結尾要有明確的下一步（私訊、留言、來電），但語氣別像推銷，降低對方的心理門檻。
+6. emoji 克制，整篇最多 3–5 個，不要每行都放。
+7. 不要用「黃金地段」「稀有釋出」「錯過不再」這類浮誇廣告詞。
+
+## 風格
+第 1 版用「${AI_STYLES[0][0]}」（${AI_STYLES[0][1]}），
+第 2 版用「${AI_STYLES[1][0]}」（${AI_STYLES[1][1]}），
+第 3 版之後你自己挑不同風格，並在每版標題註明你用了什麼風格。
+
+## 輸出格式
+每個版本用「--- 版本 N｜風格 ---」分隔，只給文案本身，不要額外說明。`;
+}
+function openAIDialog(){
+  if(!db.listings.length&&!db.profile.name){
+    toast('先填「設定」裡的聯絡資料，或建一個物件');return;
+  }
+  const prompt=buildAIPrompt();
+  openDlg('用 AI 寫文案',
+    `<p class="hint" style="margin-bottom:10px">
+       下面是依你目前選的物件和社團組好的提示詞。複製後貼到 Claude 或 ChatGPT，
+       它會給你多個風格不同的版本，滿意的再貼回「模板」存起來重複用。
+     </p>
+     <div id="ai-prompt">${esc(prompt)}</div>
+     <div class="row" style="margin-top:12px">
+       <button type="button" class="btn" id="ai-copy">複製提示詞</button>
+       <a class="btn g" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">開啟 Claude</a>
+       <a class="btn g" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">開啟 ChatGPT</a>
+     </div>
+     <div class="warn-box" style="margin-top:12px">
+       <b>拿回文案後記得做兩件事：</b>坪數、價格、屋齡自己再核對一次（AI 偶爾會補上你沒給的細節），
+       然後存成模板時同一分類放 2 個以上版本，發送清單才有東西可以輪替。
+     </div>`,
+    null,{readOnly:true});
+  $('#ai-copy').addEventListener('click',async()=>{
+    toast(await copyText(prompt)?'已複製，貼到 Claude 就可以了':'複製失敗，請手動選取');
+  });
+}
+
+/* =========================================================
+   FB 市集：Marketplace 沒有公開 API，這裡把欄位準備好逐格複製
+   ========================================================= */
+function openMarketDialog(){
+  const l=byId(db.listings,$('#m-listing').value);
+  if(!l){toast('先在上面選一個物件');return;}
+  const p=db.profile;
+  const title=[l.title,l.layout,l.size].filter(Boolean).join(' ').slice(0,100);
+  const price=String(l.price||'').replace(/[^\d]/g,'');
+  const priceHint=/萬/.test(l.price||'')?`${price} 萬 → 市集要填 ${price?Number(price)*10000:''}`:price;
+  const desc=[
+    l.address&&`📍 ${l.address}`,
+    [l.layout,l.size,l.floor].filter(Boolean).join('｜'),
+    l.age&&`屋齡 ${l.age}`,
+    '',l.features,'',
+    [p.name,p.shop].filter(Boolean).join('｜'),
+    p.phone&&`☎️ ${p.phone}`,
+    p.line&&`LINE：${p.line}`,
+  ].filter(v=>v!==undefined&&v!==null).join('\n').replace(/\n{3,}/g,'\n\n').trim();
+
+  const rows=marketRows=[
+    ['標題',title],
+    ['價格',priceHint||'（未填）'],
+    ['分類',l.kind==='租'?'房地產 › 出租':'房地產 › 出售'],
+    ['地點',l.address||'（未填）'],
+    ['說明',desc],
+  ];
+  openDlg('FB 市集刊登欄位',
+    `<p class="hint" style="margin-bottom:10px">
+       Facebook 市集沒有開放刊登介面，所以這裡把各欄位排好，一格一格複製過去。
+       ${/萬/.test(l.price||'')?'<b>注意價格：</b>市集要填新台幣元，不是萬。':''}
+     </p>`+
+    rows.map(([k,v],i)=>`<div class="field-row">
+       <div class="fl">${esc(k)}</div>
+       <div class="fv">${esc(v)}</div>
+       <button type="button" class="btn g sm" data-mcopy="${i}">複製</button>
+     </div>`).join('')+
+    `<div class="row" style="margin-top:14px">
+       <a class="btn" href="https://www.facebook.com/marketplace/create/item"
+          target="_blank" rel="noopener noreferrer">開啟市集刊登頁</a>
+       ${l.photos?.length?`<span class="tag">這個物件有 ${l.photos.length} 張照片，記得一起上傳</span>`:''}
+     </div>`,
+    null,{readOnly:true});
+}
+$('#m-ai').addEventListener('click',openAIDialog);
+$('#m-market').addEventListener('click',openMarketDialog);
+
+/* =========================================================
    紀錄與成效
    ========================================================= */
 function renderPerf(){
@@ -1141,32 +1595,50 @@ $('#p-notify').addEventListener('click',async()=>{
   try{await Notification.requestPermission();}catch(e){}
   updateNotifyState();
 });
-$('#x-out').addEventListener('click',()=>{
-  const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+$('#x-out').addEventListener('click',async()=>{
+  toast('打包中…');
+  // 照片存在 IndexedDB，不打包進來的話備份是不完整的
+  const ids=[...new Set(db.listings.flatMap(l=>l.photos||[]))];
+  const photos={};
+  for(const id of ids){const d=await IDB.get(id);if(d)photos[id]=d;}
+  const payload={...db,_photos:photos,_exportedAt:Date.now()};
+  const b=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(b);
   a.download=`社團貼文助手-備份-${fmtDate(Date.now()).replace(/\//g,'')}.json`;
-  a.click();URL.revokeObjectURL(a.href);toast('已匯出');
+  a.click();URL.revokeObjectURL(a.href);
+  const mb=(b.size/1048576).toFixed(1);
+  toast(`已匯出（含 ${ids.length} 張照片，${mb} MB）`);
 });
 $('#x-in').addEventListener('click',()=>$('#x-file').click());
 $('#x-file').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
-  r.onload=()=>{
+  r.onload=async()=>{
     try{
       const d=JSON.parse(r.result);
       if(!d||typeof d!=='object'||Array.isArray(d))throw new Error('bad');
       if(!confirm('匯入會覆蓋目前所有資料，確定嗎？'))return;
-      db=migrate(d);save();render();renderProfile();toast('匯入完成');
+      const photos=d._photos||{};
+      delete d._photos;delete d._exportedAt;
+      db=migrate(d);save();
+      let n=0;
+      for(const[id,dataUrl]of Object.entries(photos)){
+        try{await IDB.put(id,dataUrl);n++;}catch(e){}
+      }
+      render();renderProfile();
+      toast(n?`匯入完成，還原 ${n} 張照片`:'匯入完成');
     }catch(err){toast('檔案格式不正確');}
   };
   r.readAsText(f);e.target.value='';
 });
-$('#x-reset').addEventListener('click',()=>{
-  if(!confirm('會清空社團、模板、物件、排程、紀錄全部資料，無法復原。確定？'))return;
+$('#x-reset').addEventListener('click',async()=>{
+  if(!confirm('會清空社團、模板、物件、排程、紀錄、照片全部資料，無法復原。確定？'))return;
   if(!confirm('再確認一次：真的要清空嗎？'))return;
   db=structuredClone(blank);picked=[];drafts={};posted={};
-  save();render();renderProfile();toast('已清空');
+  save();
+  await IDB.clear();          // 照片存在別的地方，要一起清
+  render();renderProfile();toast('已清空');
 });
 
 /* =========================================================
@@ -1331,8 +1803,12 @@ document.addEventListener('click',e=>{
   }
   if(d.ld){
     const l=byId(db.listings,d.ld);
-    if(confirm(`刪除物件「${l.title}」？貼文紀錄會保留。`)){
-      db.listings=db.listings.filter(x=>x.id!==d.ld);save();render();}
+    const np=l.photos?.length?`（含 ${l.photos.length} 張照片）`:'';
+    if(confirm(`刪除物件「${l.title}」${np}？貼文紀錄會保留。`)){
+      db.listings=db.listings.filter(x=>x.id!==d.ld);
+      save();render();
+      purgeOrphanPhotos();     // 照片跟著走，不留孤兒
+    }
   }
   if(d.qd&&confirm('刪除這筆排程？')){
     db.schedule=db.schedule.filter(x=>x.id!==d.qd);save();render();
