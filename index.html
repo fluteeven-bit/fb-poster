@@ -202,6 +202,23 @@ dialog::backdrop{background:rgba(15,12,18,.55)}
 .fold{background:none;border:0;color:var(--ink3);cursor:pointer;font-size:12px;
   padding:2px 4px}
 .fold:hover{color:var(--brand)}
+/* 發文節奏列 */
+.pace{display:flex;flex-direction:column;gap:2px;border-radius:9px;
+  padding:10px 13px;margin-bottom:12px;font-size:13px;border:1px solid transparent}
+.pace:empty{display:none}
+.pace b{font-weight:700}
+.pace span{font-size:12px;opacity:.85}
+.pace.go{background:var(--ok-soft);color:var(--ok)}
+.pace.wait{background:var(--warn-soft);color:var(--warn);border-color:var(--warn-line)}
+.pace.stop{background:var(--crit-soft);color:var(--crit)}
+.pace.off{background:var(--bg);color:var(--ink3);border-color:var(--line)}
+.send.locked{opacity:.72}
+.send.locked .send-h .t{color:var(--ink2)}
+/* 倒數中的按鈕不要用品牌色，免得看起來還能按 */
+.btn.waiting,.btn.waiting:disabled{background:var(--warn-soft);color:var(--warn);
+  opacity:1;cursor:default;font-variant-numeric:tabular-nums}
+.btn.full,.btn.full:disabled{background:var(--crit-soft);color:var(--crit);opacity:1;cursor:not-allowed}
+
 .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;min-width:60px}
 .bar i{display:block;height:100%;background:var(--brand);border-radius:3px}
 
@@ -335,6 +352,8 @@ kbd{background:var(--card);border:1px solid var(--line);border-bottom-width:2px;
             <button class="btn g sm" id="m-openall">全部開啟</button>
             <button class="btn sm" id="m-doneall">全部標記已貼</button>
           </div>
+          <div class="pace" id="pace-bar">
+          </div>
           <div id="send-list"></div>
         </div>
       </div>
@@ -410,6 +429,25 @@ kbd{background:var(--card);border:1px solid var(--line);border-bottom-width:2px;
       </div>
       <div>
         <div class="card">
+          <h3>發文節奏（防帳號被鎖）</h3>
+          <label class="ck"><input type="checkbox" id="p-pace-on"> 開啟節奏控制</label>
+          <div class="hint" style="margin:2px 0 10px">
+            開啟後，每貼完一則就把下一則鎖住倒數，並限制每天總則數。
+            FB 抓機器人看的就是「短時間內跨多個社團貼相似內容」。
+          </div>
+          <div class="row" style="margin-bottom:10px" id="p-pace-presets"></div>
+          <div class="grid g3">
+            <div class="field"><label for="p-pace-min">最短間隔（分）</label>
+              <input id="p-pace-min" type="number" min="0" max="240"></div>
+            <div class="field"><label for="p-pace-max">最長間隔（分）</label>
+              <input id="p-pace-max" type="number" min="0" max="240"></div>
+            <div class="field"><label for="p-pace-cap">每天上限（則）</label>
+              <input id="p-pace-cap" type="number" min="1" max="50"></div>
+          </div>
+          <div class="hint" style="margin-bottom:14px">
+            實際間隔會在這兩個數字之間隨機抽 —— 固定節奏本身就是機器人特徵。
+          </div>
+
           <h3>貼文保留與提醒</h3>
           <div class="field">
             <label for="p-keep">預設保留天數（0 = 不自動排入待刪）</label>
@@ -477,7 +515,10 @@ const blank={
   groups:[],templates:[],listings:[],logs:[],schedule:[],
   profile:{name:'',title:'',shop:'',phone:'',line:'',
            license:'',broker:'',company:'',sign:''},
-  settings:{keepDays:0}
+  settings:{keepDays:0,
+    // 發文節奏：同一帳號短時間連貼多個社團最容易被 FB 鎖，這裡強制拉開間隔
+    pacing:{on:true,minGap:10,maxGap:20,dailyCap:8},
+    nextAt:0}
 };
 /** 物件的完整欄位表（也是新增物件時的預設值） */
 const LISTING_FIELDS={
@@ -504,6 +545,13 @@ function migrate(d){
                 groupIds:Array.isArray(s.groupIds)?s.groupIds:[]}));
   x.profile  =Object.assign(structuredClone(blank.profile),obj(src.profile));
   x.settings =Object.assign(structuredClone(blank.settings),obj(src.settings));
+  x.settings.pacing=Object.assign(structuredClone(blank.settings.pacing),obj(x.settings.pacing));
+  const pc=x.settings.pacing;
+  pc.minGap=Math.max(0,+pc.minGap||0);
+  pc.maxGap=Math.max(pc.minGap,+pc.maxGap||0);
+  pc.dailyCap=Math.max(1,+pc.dailyCap||1);
+  pc.on=pc.on!==false;
+  x.settings.nextAt=+x.settings.nextAt||0;
   x.settings.keepDays=Math.max(0,+x.settings.keepDays||0);
   return x;
 }
@@ -1549,12 +1597,21 @@ function renderMake(){
 }
 function renderSend(){
   const el=$('#send-list');
+  const ps=pacingState();
+  renderPaceBar(ps);           // 額度狀態不管有沒有選社團都要看得到
+  // 節奏開啟時，「全部標記已貼」是不該被按的動作，降成次要樣式
+  const da=$('#m-doneall');
+  if(da)da.className='btn sm'+((db.settings.pacing||{}).on?' g':'');
   if(!picked.length){el.innerHTML='<div class="empty">左邊選社團後，這裡會為每個社團各產生一份文案。</div>';return;}
   if(!srcTemplates().length){el.innerHTML='<div class="empty">先在 STEP 1 選文案來源。</div>';return;}
   el.innerHTML=picked.map((gid,i)=>{
     const g=byId(db.groups,gid);if(!g)return '';
     const t=tplFor(i), txt=textFor(gid,i), open=openFold===gid;
-    return `<div class="send ${posted[gid]?'posted':''}">
+    const locked=!posted[gid]&&!ps.ok;
+    const label=posted[gid]?'✓ 已貼'
+      :(locked?(ps.why==='cap'?'今日已滿':`<span data-wait>等 ${fmtWait(ps.wait)}</span>`)
+             :'標記已貼');
+    return `<div class="send ${posted[gid]?'posted':''} ${locked?'locked':''}">
       <div class="send-h">
         <span class="tag br num">${i+1}</span>
         <div class="t">${esc(g.name)}</div>
@@ -1563,7 +1620,7 @@ function renderSend(){
         <button class="fold" data-fold="${gid}">${open?'收合 ▲':'看文案 ▼'}</button>
         <button class="btn g sm" data-copy="${gid}">複製</button>
         ${g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開社團</a>`:''}
-        <button class="btn sm ${posted[gid]?'done':''}" data-post="${gid}">${posted[gid]?'✓ 已貼':'標記已貼'}</button>
+        <button class="btn sm ${posted[gid]?'done':''}${locked?(ps.why==='cap'?' full':' waiting'):''}" data-post="${gid}"${locked?' disabled':''}>${label}</button>
       </div>
       ${open?`<div class="send-b">
         <div class="send-txt" contenteditable="true" data-draft="${gid}">${esc(txt)}</div>
@@ -1572,6 +1629,62 @@ function renderSend(){
     </div>`;
   }).join('');
 }
+/* =========================================================
+   發文節奏 —— 防止帳號被鎖的核心
+   FB 判定機器人看的是「同一帳號短時間在多個社團貼相似內容」。
+   貼完一則就把下一則鎖住，強制隔開一段隨機時間，並設每日上限。
+   ========================================================= */
+const PACE_PRESETS=[
+  ['保守','最安全，帳號曾被限制過就用這個',{minGap:15,maxGap:30,dailyCap:5}],
+  ['標準','日常經營的建議值',{minGap:10,maxGap:20,dailyCap:8}],
+  ['積極','衝量用，風險明顯較高',{minGap:6,maxGap:12,dailyCap:12}],
+];
+const sameLocalDay=(a,b)=>{
+  const x=new Date(a),y=new Date(b);
+  return x.getFullYear()===y.getFullYear()&&x.getMonth()===y.getMonth()&&x.getDate()===y.getDate();
+};
+const todayPosted=()=>db.logs.filter(l=>sameLocalDay(l.at,Date.now())).length;
+/** 現在能不能貼？不能的話是為什麼、還要等多久 */
+function pacingState(){
+  const p=db.settings.pacing||{};
+  const done=todayPosted();
+  if(!p.on)return{ok:true,off:true,done,cap:p.dailyCap||0};
+  if(done>=p.dailyCap)return{ok:false,why:'cap',done,cap:p.dailyCap};
+  const wait=(db.settings.nextAt||0)-Date.now();
+  if(wait>0)return{ok:false,why:'gap',wait,at:db.settings.nextAt,done,cap:p.dailyCap};
+  return{ok:true,done,cap:p.dailyCap};
+}
+const fmtWait=ms=>{
+  const s=Math.max(0,Math.ceil(ms/1000));
+  return s>=60?`${Math.floor(s/60)} 分 ${String(s%60).padStart(2,'0')} 秒`:`${s} 秒`;
+};
+const fmtClock=ts=>{const d=new Date(ts);return `${pad(d.getHours())}:${pad(d.getMinutes())}`;};
+
+/** 產生貼文頁最上面那條節奏狀態 */
+function renderPaceBar(ps){
+  const el=$('#pace-bar');if(!el)return;
+  const p=db.settings.pacing||{};
+  if(!p.on){
+    el.className='pace off';
+    el.innerHTML='<b>節奏控制已關閉</b><span>連續貼多個社團容易被 FB 鎖，建議到「設定」打開。</span>';
+    return;
+  }
+  const left=Math.max(0,ps.cap-ps.done);
+  if(ps.why==='cap'){
+    el.className='pace stop';
+    el.innerHTML=`<b>今天額度用完了（${ps.done}/${ps.cap}）</b>`+
+      `<span>明天再繼續。硬貼下去是帳號被限制的主因。</span>`;
+  }else if(ps.why==='gap'){
+    el.className='pace wait';
+    el.innerHTML=`<b>下一則 <span data-wait>等 ${fmtWait(ps.wait)}</span></b>`+
+      `<span>約 ${fmtClock(ps.at)} 可貼 · 今天 ${ps.done}/${ps.cap} 則，還剩 ${left} 則</span>`;
+  }else{
+    el.className='pace go';
+    el.innerHTML=`<b>現在可以貼</b>`+
+      `<span>今天 ${ps.done}/${ps.cap} 則，還剩 ${left} 則 · 每則間隔 ${p.minGap}–${p.maxGap} 分鐘</span>`;
+  }
+}
+
 function markPosted(gid,i){
   const g=byId(db.groups,gid);if(!g||posted[gid])return;
   const t=tplFor(i), l=byId(db.listings,$('#m-listing').value);
@@ -1583,6 +1696,12 @@ function markPosted(gid,i){
     text:textFor(gid,i),expireAt:keep>0?at+keep*DAY:null,
     deletedAt:null,snoozeUntil:null,flag:'',leads:0});
   posted[gid]=true;
+  // 間隔刻意取隨機值：固定節奏本身就是機器人特徵
+  const p=db.settings.pacing||{};
+  if(p.on){
+    const gap=(p.minGap+Math.random()*Math.max(0,p.maxGap-p.minGap))*60000;
+    db.settings.nextAt=at+gap;
+  }
 }
 $('#m-src').addEventListener('change',()=>{drafts={};openFold=null;renderSend();});
 $('#m-listing').addEventListener('change',()=>{drafts={};renderSend();});
@@ -1609,10 +1728,23 @@ $('#m-openall').addEventListener('click',()=>{
 $('#m-doneall').addEventListener('click',()=>{
   const todo=picked.filter(g=>!posted[g]);
   if(!todo.length){toast('沒有待標記的社團');return;}
+  // 一次標記全部等於宣告「我剛在幾分鐘內貼了 N 個社團」，正是要避免的事
+  if(db.settings.pacing&&db.settings.pacing.on){
+    toast('節奏控制開著，請一則一則貼');return;
+  }
   if(!confirm(`把 ${todo.length} 個社團都標記為已貼？`))return;
   picked.forEach((gid,i)=>markPosted(gid,i));
   save();render();toast(`已記錄 ${todo.length} 筆貼文`);
 });
+
+/* 倒數每秒跳一次；時間到就重畫把按鈕解鎖 */
+setInterval(()=>{
+  if(!$('#v-make').classList.contains('on'))return;
+  const ps=pacingState();
+  const spans=document.querySelectorAll('#send-list [data-wait],#pace-bar [data-wait]');
+  if(ps.ok||ps.why==='cap'){if(spans.length)renderSend();return;}
+  spans.forEach(sp=>sp.textContent='等 '+fmtWait(ps.wait));
+},1000);
 async function copyText(txt){
   try{await navigator.clipboard.writeText(txt);return true;}
   catch(e){
@@ -1847,8 +1979,28 @@ function renderProfile(){
   $('#p-license').value=p.license||'';$('#p-broker').value=p.broker||'';
   $('#p-company').value=p.company||'';
   $('#p-keep').value=db.settings.keepDays||0;
+  const pc=db.settings.pacing||{};
+  $('#p-pace-on').checked=pc.on!==false;
+  $('#p-pace-min').value=pc.minGap;
+  $('#p-pace-max').value=pc.maxGap;
+  $('#p-pace-cap').value=pc.dailyCap;
+  $('#p-pace-presets').innerHTML=PACE_PRESETS.map(([n,d,v],i)=>{
+    const cur=pc.minGap===v.minGap&&pc.maxGap===v.maxGap&&pc.dailyCap===v.dailyCap;
+    return `<button class="btn ${cur?'':'g'} sm" data-preset="${i}" title="${esc(d)}">`+
+      `${esc(n)}　${v.minGap}–${v.maxGap}分／天${v.dailyCap}則</button>`;
+  }).join('');
   updateNotifyState();
 }
+// 三段預設：不想自己想數字就按一下
+$('#p-pace-presets').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-preset]');if(!b)return;
+  const v=PACE_PRESETS[+b.dataset.preset][2];
+  $('#p-pace-min').value=v.minGap;
+  $('#p-pace-max').value=v.maxGap;
+  $('#p-pace-cap').value=v.dailyCap;
+  $('#p-pace-on').checked=true;
+  $('#p-save').click();
+});
 function updateNotifyState(){
   const el=$('#notify-state');
   if(!('Notification' in window)){el.textContent='瀏覽器不支援';return;}
@@ -1863,7 +2015,14 @@ $('#p-save').addEventListener('click',()=>{
     license:$('#p-license').value.trim(),broker:$('#p-broker').value.trim(),
     company:$('#p-company').value.trim(),sign:$('#p-sign').value};
   db.settings.keepDays=Math.max(0,+$('#p-keep').value||0);
-  save();render();toast('已儲存');
+  const mn=Math.max(0,+$('#p-pace-min').value||0);
+  db.settings.pacing={
+    on:$('#p-pace-on').checked,
+    minGap:mn,
+    maxGap:Math.max(mn,+$('#p-pace-max').value||0),   // 最長不能小於最短
+    dailyCap:Math.max(1,+$('#p-pace-cap').value||1),
+  };
+  save();render();renderProfile();toast('已儲存');
 });
 $('#p-notify').addEventListener('click',async()=>{
   if(!('Notification' in window)){toast('這個瀏覽器不支援通知');return;}

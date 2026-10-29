@@ -5,3 +5,6 @@ auto/
 artifact.html
 backup.json
 *.backup.json
+# 開發用本機伺服器產物，不進版控
+.claude/
+serve.cjs
