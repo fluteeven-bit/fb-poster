@@ -16,6 +16,7 @@
   --ok:#146c42; --ok-soft:#e4f2ea;
   --warn:#8f5f10; --warn-soft:#fbf1de; --warn-line:#ecdcb8;
   --crit:#a8321f; --crit-soft:#fbeae6;
+  --th-bg:#1c1b22; --th-ink:#ffffff;
   --toast:#26222a; --toast-ink:#fff;
   --shadow:0 1px 2px rgba(30,20,25,.07),0 1px 8px rgba(30,20,25,.04);
   --r:10px;
@@ -30,6 +31,7 @@
     --ok:#5fcf94; --ok-soft:#16301f;
     --warn:#e0ab5a; --warn-soft:#31260f; --warn-line:#4a3a15;
     --crit:#f0836c; --crit-soft:#3a1c15;
+    --th-bg:#f0eef4; --th-ink:#17161b;
     --toast:#efecf1; --toast-ink:#1a181b;
     --shadow:0 1px 2px rgba(0,0,0,.4);
   }
@@ -44,6 +46,7 @@
   --ok:#146c42; --ok-soft:#e4f2ea;
   --warn:#8f5f10; --warn-soft:#fbf1de; --warn-line:#ecdcb8;
   --crit:#a8321f; --crit-soft:#fbeae6;
+  --th-bg:#1c1b22; --th-ink:#ffffff;
   --toast:#26222a; --toast-ink:#fff;
   --shadow:0 1px 2px rgba(30,20,25,.07),0 1px 8px rgba(30,20,25,.04);
 }
@@ -56,6 +59,7 @@
   --ok:#5fcf94; --ok-soft:#16301f;
   --warn:#e0ab5a; --warn-soft:#31260f; --warn-line:#4a3a15;
   --crit:#f0836c; --crit-soft:#3a1c15;
+  --th-bg:#f0eef4; --th-ink:#17161b;
   --toast:#efecf1; --toast-ink:#1a181b;
   --shadow:0 1px 2px rgba(0,0,0,.4);
 }
@@ -218,6 +222,11 @@ dialog::backdrop{background:rgba(15,12,18,.55)}
 .btn.waiting,.btn.waiting:disabled{background:var(--warn-soft);color:var(--warn);
   opacity:1;cursor:default;font-variant-numeric:tabular-nums}
 .btn.full,.btn.full:disabled{background:var(--crit-soft);color:var(--crit);opacity:1;cursor:not-allowed}
+/* Threads 用另一個顏色，掃一眼就知道這則不是貼 FB */
+.tag.th{background:var(--th-bg);color:var(--th-ink);border-color:transparent}
+.tag.crit{background:var(--crit-soft);color:var(--crit);border-color:transparent}
+.over-warn{margin:0 13px 11px;padding:7px 10px;border-radius:7px;font-size:12px;
+  background:var(--crit-soft);color:var(--crit);line-height:1.6}
 
 .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;min-width:60px}
 .bar i{display:block;height:100%;background:var(--brand);border-radius:3px}
@@ -535,7 +544,7 @@ function migrate(d){
   const obj=v=>(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
   const src=obj(d);
   const x=Object.assign(structuredClone(blank),src);
-  x.groups   =arr(src.groups).map(g=>({ruleDelDays:0,...g}));
+  x.groups   =arr(src.groups).map(g=>({ruleDelDays:0,platform:'fb',...g}));
   x.templates=arr(src.templates);
   x.listings =arr(src.listings).map(l=>({...structuredClone(LISTING_FIELDS),...l,
                 photos:Array.isArray(l.photos)?l.photos:[]}));
@@ -716,7 +725,7 @@ const dueSchedules=()=>db.schedule.filter(s=>!s.doneAt&&s.at<=Date.now())
 /* =========================================================
    分頁
    ========================================================= */
-const VIEWS=[['home','今日待辦'],['make','產生貼文'],['sched','排程'],['groups','社團'],
+const VIEWS=[['home','今日待辦'],['make','產生貼文'],['sched','排程'],['groups','發布目標'],
              ['tpls','模板'],['listings','物件'],['log','紀錄'],['set','設定']];
 $('#nav').innerHTML=VIEWS.map(([k,n],i)=>
   `<button data-v="${k}"${i===0?' class="on"':''}>${n}<span class="badge hide" data-b="${k}"></span></button>`).join('');
@@ -1053,10 +1062,18 @@ const SEL=(label,id,opts,cur)=>
    ========================================================= */
 function editGroup(g){
   const isNew=!g;
-  g=g||{id:uid(),name:'',url:'',area:'',cooldown:5,members:'',note:'',ruleDelDays:0};
-  openDlg(isNew?'新增社團':'編輯社團',
-    F('社團名稱 *','f-name',g.name,'text','例：新莊買屋賣屋交流')+
-    F('社團網址','f-url',g.url,'url','https://www.facebook.com/groups/...')+
+  g=g||{id:uid(),name:'',url:'',area:'',cooldown:5,members:'',note:'',ruleDelDays:0,platform:'fb'};
+  const th=isThreads(g);
+  openDlg(isNew?'新增發布目標':'編輯發布目標',
+    `<div class="field"><label for="f-plat">平台</label>
+       <select id="f-plat">
+         <option value="fb"${th?'':' selected'}>Facebook 社團</option>
+         <option value="threads"${th?' selected':''}>Threads</option>
+       </select>
+       <div class="hint" id="f-plat-hint" style="margin-top:5px"></div>
+     </div>`+
+    F('名稱 *','f-name',g.name,'text','例：新莊買屋賣屋交流')+
+    F('網址','f-url',g.url,'url','https://www.facebook.com/groups/...')+
     `<div class="grid g3">
       <div>${F('地區 / 分類','f-area',g.area,'text','新莊')}</div>
       <div>${F('冷卻天數','f-cd',g.cooldown,'number')}</div>
@@ -1066,33 +1083,46 @@ function editGroup(g){
     TA('備註（版規、貼文限制）','f-note',g.note,70),
     ()=>{
       const name=$('#f-name').value.trim();
-      if(!name){toast('社團名稱必填');return false;}
-      Object.assign(g,{name,url:$('#f-url').value.trim(),area:$('#f-area').value.trim(),
+      if(!name){toast('名稱必填');return false;}
+      Object.assign(g,{name,platform:$('#f-plat').value,
+        url:$('#f-url').value.trim(),area:$('#f-area').value.trim(),
         cooldown:Math.max(0,+$('#f-cd').value||0),
         ruleDelDays:Math.max(0,+$('#f-rd').value||0),
         members:$('#f-mem').value.trim(),note:$('#f-note').value.trim()});
       if(isNew)db.groups.push(g);
-      save();render();toast(isNew?'已新增社團':'已更新');
+      save();render();toast(isNew?'已新增':'已更新');
     });
+  // 選 Threads 時，幾個欄位的意義不一樣，直接在畫面上講清楚
+  const syncPlat=()=>{
+    const t=$('#f-plat').value==='threads';
+    $('#f-plat-hint').innerHTML=t
+      ? 'Threads 是你自己的帳號，不用填網址 —— 系統會用官方發文連結把文案直接帶進去。單則上限 500 字。'
+      : 'FB 社團請把社團網址貼上，才能一鍵開啟。';
+    $('#f-url').closest('.field').style.display=t?'none':'';
+    $('#f-mem').closest('.field').style.display=t?'none':'';
+    $('#f-rd').closest('.field').style.display=t?'none':'';
+  };
+  $('#f-plat').addEventListener('change',syncPlat);
+  syncPlat();
 }
 function renderGroups(){
   const el=$('#g-list');
   if(!db.groups.length){
-    el.innerHTML='<div class="empty">還沒有社團。<br>先把你常貼的 FB 社團加進來，連結貼上後就能一鍵開啟。</div>';
+    el.innerHTML='<div class="empty">還沒有發布目標。<br>把你常貼的 FB 社團加進來，Threads 也可以加成一個目標。</div>';
     return;
   }
   el.innerHTML=db.groups.map(g=>{
-    const st=groupState(g);
-    const meta=[g.area,g.members?g.members+'人':'',`冷卻 ${g.cooldown} 天`,
-      g.ruleDelDays>0?`版規 ${g.ruleDelDays} 天內刪`:'',ago(st.last?.at)]
+    const st=groupState(g),th=isThreads(g);
+    const meta=[g.area,!th&&g.members?g.members+'人':'',`冷卻 ${g.cooldown} 天`,
+      !th&&g.ruleDelDays>0?`版規 ${g.ruleDelDays} 天內刪`:'',ago(st.last?.at)]
       .filter(Boolean).map(esc).join(' · ');
     return `<div class="item"><div class="row">
       <div style="min-width:0;flex:1">
-        <div class="t">${esc(g.name)}</div>
+        <div class="t"><span class="tag ${th?'th':'br'}">${th?'Threads':'FB 社團'}</span> ${esc(g.name)}</div>
         <div class="m">${meta}${g.note?'<br>'+esc(g.note):''}</div>
       </div>
       <span class="tag ${st.ready?'ok':'warn'}">${st.ready?'可貼':'還有 '+st.left+' 天'}</span>
-      ${g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開啟</a>`:''}
+      ${!th&&g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開啟</a>`:''}
       <button class="btn g sm" data-ge="${g.id}">編輯</button>
       <button class="btn g sm" data-gd="${g.id}">刪除</button>
     </div></div>`;
@@ -1102,7 +1132,14 @@ function renderGroups(){
 /* =========================================================
    模板
    ========================================================= */
-const CATS=['物件銷售','個人品牌','社區在地','收購找屋'];
+const CATS=['物件銷售','個人品牌','社區在地','收購找屋','Threads 短文'];
+/* Threads 是另一個世界：官方上限 500 字、節奏快、長規格表沒人看。
+   所以 Threads 目標優先抓這個分類的模板，抓不到才退回一般模板。 */
+const THREADS_CAT='Threads 短文';
+const THREADS_MAX=500;
+const isThreads=g=>!!g&&g.platform==='threads';
+/** Threads 的網頁發文連結可以把文案先帶進去，等於幫他少打一次字 */
+const threadsIntent=txt=>'https://www.threads.net/intent/post?text='+encodeURIComponent(txt||'');
 /** 引流用的收尾話術：降低門檻、給明確下一步 */
 const CTAS=[
   '有興趣的朋友直接私訊我，我先幫你評估適不適合，不用馬上看屋。',
@@ -1561,9 +1598,23 @@ function srcTemplates(){
 }
 /** 第 i 個社團拿第 i%n 個模板 —— 同一批不會全部長一樣 */
 const tplFor=i=>{const ts=srcTemplates();return ts.length?ts[i%ts.length]:null;};
+/** 依目標平台挑模板：Threads 走短文分類，FB 走你選的來源。
+ *  兩邊各自輪替，所以同時貼 3 個社團＋Threads 也不會撞到同一篇。 */
+function tplForGid(gid,i){
+  const g=byId(db.groups,gid);
+  const idx=picked.indexOf(gid);
+  const nth=p=>picked.filter((x,k)=>k<idx&&isThreads(byId(db.groups,x))===p).length;
+  if(isThreads(g)){
+    const ts=db.templates.filter(t=>t.cat===THREADS_CAT);
+    if(ts.length)return ts[nth(true)%ts.length];
+  }
+  const base=srcTemplates();
+  if(!base.length)return null;
+  return base[(isThreads(g)?nth(true):nth(false))%base.length];
+}
 const textFor=(gid,i)=>{
   if(drafts[gid]!==undefined)return drafts[gid];
-  const t=tplFor(i);
+  const t=tplForGid(gid,i);
   return t?fill(t.body,byId(db.listings,$('#m-listing').value)):'';
 };
 
@@ -1606,25 +1657,31 @@ function renderSend(){
   if(!srcTemplates().length){el.innerHTML='<div class="empty">先在 STEP 1 選文案來源。</div>';return;}
   el.innerHTML=picked.map((gid,i)=>{
     const g=byId(db.groups,gid);if(!g)return '';
-    const t=tplFor(i), txt=textFor(gid,i), open=openFold===gid;
+    const t=tplForGid(gid,i), txt=textFor(gid,i), open=openFold===gid;
+    const th=isThreads(g), over=th&&txt.length>THREADS_MAX;
     const locked=!posted[gid]&&!ps.ok;
     const label=posted[gid]?'✓ 已貼'
       :(locked?(ps.why==='cap'?'今日已滿':`<span data-wait>等 ${fmtWait(ps.wait)}</span>`)
              :'標記已貼');
+    // Threads 官方發文連結可以直接把文案帶進去，FB 社團只能開頁面自己貼
+    const openBtn=th
+      ? `<a class="btn g sm" href="${esc(threadsIntent(txt))}" target="_blank" rel="noopener noreferrer">開 Threads（帶入文案）</a>`
+      : (g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開社團</a>`:'');
     return `<div class="send ${posted[gid]?'posted':''} ${locked?'locked':''}">
       <div class="send-h">
-        <span class="tag br num">${i+1}</span>
-        <div class="t">${esc(g.name)}</div>
+        <span class="tag ${th?'th':'br'} num">${i+1}</span>
+        <div class="t">${th?'<span class="tag th">Threads</span> ':''}${esc(g.name)}</div>
         <span class="tag">${esc(t?t.name:'')}</span>
-        <span class="tag num">${txt.length} 字</span>
+        <span class="tag num ${over?'crit':''}">${txt.length}${th?' / '+THREADS_MAX:''} 字</span>
         <button class="fold" data-fold="${gid}">${open?'收合 ▲':'看文案 ▼'}</button>
         <button class="btn g sm" data-copy="${gid}">複製</button>
-        ${g.url?`<a class="btn g sm" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">開社團</a>`:''}
+        ${openBtn}
         <button class="btn sm ${posted[gid]?'done':''}${locked?(ps.why==='cap'?' full':' waiting'):''}" data-post="${gid}"${locked?' disabled':''}>${label}</button>
       </div>
+      ${over?`<div class="over-warn">超過 Threads 上限 ${txt.length-THREADS_MAX} 字，貼上去會被截斷。展開改短，或到「模板」建一篇「${THREADS_CAT}」。</div>`:''}
       ${open?`<div class="send-b">
         <div class="send-txt" contenteditable="true" data-draft="${gid}">${esc(txt)}</div>
-        <div class="hint" style="margin-top:6px">可以直接在這裡改，改完的內容只影響這個社團。</div>
+        <div class="hint" style="margin-top:6px">可以直接在這裡改，改完的內容只影響這個目標。${th?'　Threads 上限 '+THREADS_MAX+' 字。':''}</div>
       </div>`:''}
     </div>`;
   }).join('');
@@ -1687,7 +1744,7 @@ function renderPaceBar(ps){
 
 function markPosted(gid,i){
   const g=byId(db.groups,gid);if(!g||posted[gid])return;
-  const t=tplFor(i), l=byId(db.listings,$('#m-listing').value);
+  const t=tplForGid(gid,i), l=byId(db.listings,$('#m-listing').value);
   const at=Date.now();
   const keep=g.ruleDelDays>0?g.ruleDelDays:(db.settings.keepDays||0);
   db.logs.push({id:uid(),groupId:gid,at,
@@ -2215,7 +2272,44 @@ LINE：{{LINE}}`},
 
 這兩件事都免費，你評估完再決定要不要委託都可以。
 
-{{姓名}}｜{{店名}}｜{{電話}}`}
+{{姓名}}｜{{店名}}｜{{電話}}`},
+
+/* ── Threads 短文：上限 500 字，寫法跟 FB 社團完全不同 ──
+   不列規格表、不放一長串機能，講一件事就好，留白讓人想問。 */
+{cat:'Threads 短文',name:'Threads｜一句話物件',body:
+`{{地點}} 這間剛整理好。
+
+{{格局}}．{{坪數}}．{{樓層}}
+{{總價}} {{可議}}
+
+{{特色}}
+
+想看格局圖或實拍，留言或私訊我。
+
+{{姓名}}／{{店名}}`},
+
+{cat:'Threads 短文',name:'Threads｜在地觀察',body:
+`在 {{地點}} 帶看久了，最常被問的其實不是價格，是「這裡好不好住」。
+
+機能我可以列給你，但真正差很多的是這三件事：
+白天跟晚上的噪音、停車位好不好停、電梯等多久。
+
+這些看屋 20 分鐘看不出來，要問住過的人。
+
+有在看這區的，私訊我，我把知道的都跟你說。
+
+{{姓名}}／{{店名}}`},
+
+{cat:'Threads 短文',name:'Threads｜買方提醒',body:
+`提醒一件常被忽略的事。
+
+看中古屋的時候，記得問「建築完成日期」，不要只問屋齡。
+屋主講的屋齡常常是記憶，謄本上的日期才算數——
+這個數字會直接影響你的貸款年限。
+
+差兩三年，月付就差有感。
+
+{{姓名}}／{{店名}}`},
 ];
 $('#t-seed').addEventListener('click',()=>{
   const added=SEED.filter(s=>!db.templates.some(t=>t.name===s.name))
